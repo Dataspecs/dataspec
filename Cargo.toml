@@ -1,0 +1,20 @@
+[package]
+name = "dataspec"
+version = "0.1.0"
+edition = "2021"
+description = "Compiler for Data Specs markdown definitions"
+license = "Apache-2.0"
+
+[[bin]]
+name = "dataspec"
+path = "src/main.rs"
+
+[dependencies]
+pulldown-cmark = "0.13"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2"
+
+[dev-dependencies]
+pretty_assertions = "1"

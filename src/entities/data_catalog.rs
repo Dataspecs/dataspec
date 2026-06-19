@@ -77,6 +77,14 @@ impl DataCatalog {
     pub fn register_operations(&mut self, operations: Vec<&'static Operation>) {
         for operation in operations {
             self.register_operation(operation);
+            if let Some(tags) = &operation.tags {
+                for tag in tags.iter() {
+                    self.operations_by_tag
+                        .entry(tag.to_string())
+                        .or_insert(Vec::new())
+                        .push(operation);
+                }
+            }
         }
     }
 

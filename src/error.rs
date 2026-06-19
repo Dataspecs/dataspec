@@ -19,6 +19,15 @@ pub enum ParseError {
         #[source]
         source: std::io::Error,
     },
+
+    #[error("duplicate {kind} `{name}`")]
+    DuplicateEntity { kind: String, name: String },
+
+    #[error("multiple config entities found")]
+    MultipleConfig,
+
+    #[error("invalid entity name for static generation: `{name}`")]
+    InvalidEntityName { name: String },
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;

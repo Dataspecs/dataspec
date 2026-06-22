@@ -19,4 +19,4 @@ pub use handler::spec_handler;
 pub use parser::{
     parse_sections, parse_spec, parse_spec_dir, parse_spec_file, ParsedSpec, Section,
 };
-pub use scaffold::{create_project, default_dataspec_path};
+pub use scaffold::create_project;

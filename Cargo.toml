@@ -2,8 +2,10 @@
 name = "dataspec"
 version = "0.1.0"
 edition = "2021"
-description = "Compiler for Data Specs markdown definitions"
+description = "Scafolding and compiler for Data Specs markdown definitions"
 license = "Apache-2.0"
+repository = "https://github.com/Dataspecs/dataspec"
+readme = "README.md"
 
 [[bin]]
 name = "dataspec"

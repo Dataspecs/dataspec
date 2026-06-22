@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use dataspec::{create_project, default_dataspec_path};
+use dataspec::create_project;
 
 #[derive(Parser, Debug)]
 #[command(name = "dataspec")]
@@ -18,8 +18,6 @@ enum Commands {
         name: String,
         #[arg(short, long)]
         path: Option<String>,
-        #[arg(long, help = "Path to dataspec crate for generated project dependencies")]
-        dataspec_path: Option<String>,
     },
 }
 
@@ -27,19 +25,12 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::New {
-            name,
-            path,
-            dataspec_path,
-        } => {
+        Commands::New { name, path } => {
             let base_path = path
                 .map(PathBuf::from)
                 .unwrap_or_else(|| std::env::current_dir().expect("current dir"));
-            let ds_path = dataspec_path
-                .map(PathBuf::from)
-                .unwrap_or_else(default_dataspec_path);
 
-            if let Err(err) = create_project(&name, &base_path, &ds_path) {
+            if let Err(err) = create_project(&name, &base_path) {
                 eprintln!("Error: {err}");
                 std::process::exit(1);
             }

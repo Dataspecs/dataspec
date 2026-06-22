@@ -90,8 +90,9 @@ SELECT COUNT(*) FROM {{dummy_model}}
 ```
 "#;
 
-pub fn create_project(name: &str, path: &Path, dataspec_path: &Path) -> Result<(), String> {
+pub fn create_project(name: &str, path: &Path) -> Result<(), String> {
     let project_dir = path.join(name);
+    let dataspec_path = default_dataspec_path();
 
     let output = Command::new("cargo")
         .current_dir(path)
@@ -107,7 +108,7 @@ pub fn create_project(name: &str, path: &Path, dataspec_path: &Path) -> Result<(
         ));
     }
 
-    write_project_files(&project_dir, dataspec_path)?;
+    write_project_files(&project_dir, &dataspec_path)?;
     Ok(())
 }
 
@@ -195,6 +196,6 @@ fn write_dummy_specs(project_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn default_dataspec_path() -> PathBuf {
+fn default_dataspec_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }

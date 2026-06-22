@@ -196,13 +196,12 @@ See [../specs/README.md](../specs/README.md) for the full format reference, [../
 ## Scaffolding CLI reference
 
 ```bash
-dataspec new <name> [--path DIR] [--dataspec-path PATH]
+dataspec new <name> [--path DIR]
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--path` | Directory to create the project in (default: current directory) |
-| `--dataspec-path` | Path to this crate for generated project `Cargo.toml` dependencies |
 
 ---
 

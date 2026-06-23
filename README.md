@@ -184,12 +184,44 @@ config
 ```
 
 ---
+### 3. Run with the Specs Executor
+
+Specs are compiled into a Rust binary. Use it as a CLI to run transformations, tests, and operations against your storage backend. On large projects with many models, execution performance stays close to executing SQL directly from application code.
+
+<details>
+<summary>Rendering rules</summary>
+
+Two rendering phases: **compilation** and **execution**.
+
+#### Compilation-time rendering
+
+- Renders all `{{props}}` and `{{self}}` variables
+- Inlines templates into models, operations, and tests
+- After rendering, FROM clauses should reference only models or table names
+- SQL analysis runs to compute dependencies
+
+#### Execution-time rendering
+
+- Resolves model references to table names (with optional `--mappings`)
+- Substitutes `{{vars}}` passed via CLI
+- Produces final executable SQL
+
+#### Rendering context
+
+| Variable | When | Description |
+|----------|------|-------------|
+| `{{props__<key>}}` | Compile | Static config or template params (e.g. `{{props__sql}}`, `{{props__start_date}}`) |
+| `{{vars__<key>}}` | Runtime | CLI variables (e.g. `{{vars__report_year}}`) |
+| `{{<model_name>}}` | Runtime | Table ID for a model (from catalog or `--mappings`) |
+| session_id | Runtime | UUID with unique session id of this execution |
+
+Variable syntax follows the [mustache](https://lib.rs/crates/mustache) crate: `{{name}}`. Use `{{vars__name}}` for CLI variables and `{{props__name}}` for config/template props.
 
 ## Spec format
 
 Specs are Markdown files with a fixed heading structure. Each file describes one entity; the `## Type` section declares its kind (`model`, `transformation`, `template`, `test`, `operation`, or `config`).
 
-See [../specs/README.md](../specs/README.md) for the full format reference, [../specs/data-specs/](../specs/data-specs/) for minimal examples, and [../specs/examples/eth/](../specs/examples/eth/) for a realistic dependency graph.
+See [specs/README.md](https://github.com/Dataspecs/specs/blob/main/README.md) for the full format reference, [specs/data-specs/](https://github.com/Dataspecs/specs/tree/main/data-specs/) for minimal examples, and [specs/examples/eth/](https://github.com/Dataspecs/specs/tree/main/examples/eth/) for a realistic dependency graph.
 
 ---
 

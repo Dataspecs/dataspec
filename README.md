@@ -216,7 +216,7 @@ Two rendering phases: **compilation** and **execution**.
 | `{{session_id}}` | Runtime | UUID with unique session id of this execution |
 
 Variable syntax follows the [mustache](https://lib.rs/crates/mustache) crate: `{{name}}`. Use `{{vars__name}}` for CLI variables and `{{props__name}}` for config/template props.
-
+</details>
 ## Spec format
 
 Specs are Markdown files with a fixed heading structure. Each file describes one entity; the `## Type` section declares its kind (`model`, `transformation`, `template`, `test`, `operation`, or `config`).

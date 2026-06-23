@@ -63,16 +63,7 @@ On `cargo build`, `build.rs` walks `data-specs/**/*.md`, parses them, and writes
 
 ## How it works
 
-```mermaid
-flowchart TD
-    specs["data-specs/**/*.md"]
 
-    specs -->|"cargo build"| build["build.rs → dataspec::spec_builder(\"data-specs\", \"src/data.rs\")\nparse · validate · emit Rust source"]
-
-    build --> generated["src/data.rs (generated)\nLazyLock&lt;Model&gt;, LazyLock&lt;Transformation&gt;, …\nregister_data() → DataCatalog"]
-
-    generated -->|"cargo run"| runtime["main.rs → catalog = data::register_data()\ndataspec::spec_handler(&catalog)\ntransform / list → Engine → warehouse"]
-```
 
 ### Build time — `spec_builder`
 

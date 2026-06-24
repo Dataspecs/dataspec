@@ -42,7 +42,7 @@ Dummy model for getting started.
 model
 
 ## Transformation
-## Sql
+## Code
 ```sql
 SELECT 1 AS id
 ```
@@ -55,7 +55,7 @@ Reusable SQL fragment.
 template
 
 ## Transformation
-### Sql
+### Code
 ```sql
 SELECT * FROM {{dummy_model}}
 ```
@@ -71,7 +71,7 @@ operation
 - maintenance
 
 ## Transformation
-### Sql
+### Code
 ```sql
 SELECT 1
 ```
@@ -84,7 +84,7 @@ Data quality check.
 test
 
 ## Transformation
-### Sql
+### Code
 ```sql
 SELECT COUNT(*) FROM {{dummy_model}}
 ```

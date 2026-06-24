@@ -187,7 +187,7 @@ fn parse_template(root: &Section, description: Option<String>) -> Template {
         .and_then(|s| s.child("Template"))
         .and_then(|s| parse_template_usage(s.body_trimmed()));
     let sql_code = transformation
-        .and_then(|s| s.child("Sql"))
+        .and_then(|s| s.child("Code"))
         .and_then(|s| extract_sql(s.body_trimmed()))
         .unwrap_or_default();
     Template {
@@ -203,7 +203,7 @@ fn parse_template(root: &Section, description: Option<String>) -> Template {
 fn parse_test(root: &Section, description: Option<String>) -> Test {
     let transformation = root.child("Transformation");
     let sql_code = transformation
-        .and_then(|s| s.child("Sql"))
+        .and_then(|s| s.child("Code"))
         .and_then(|s| extract_sql(s.body_trimmed()))
         .unwrap_or_default();
     Test {
@@ -221,7 +221,7 @@ fn parse_operation(root: &Section, description: Option<String>) -> Operation {
         .and_then(|s| s.child("Template"))
         .and_then(|s| parse_template_usage(s.body_trimmed()));
     let sql_code = transformation
-        .and_then(|s| s.child("Sql"))
+        .and_then(|s| s.child("Code"))
         .and_then(|s| extract_sql(s.body_trimmed()))
         .unwrap_or_default();
     let tags = root

@@ -279,7 +279,7 @@ pub fn parse_transformation_body(root: &Section) -> ParsedTransformationBody {
         .child("Template")
         .and_then(|s| parse_template_usage(s.body_trimmed()));
     let sql_code = root
-        .child("Sql")
+        .child("Code")
         .and_then(|s| extract_sql(s.body_trimmed()))
         .unwrap_or_default();
     ParsedTransformationBody {

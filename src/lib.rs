@@ -8,7 +8,7 @@ pub mod parser;
 pub mod scaffold;
 
 pub use build::spec_builder;
-pub use context::Ctx;
+pub use context::{render, render_compile, render_runtime, Ctx};
 pub use entities::{
     Column, Config, DataCatalog, Entity, ExecutionPlan, ExecutionStep, ExecutionStepJson, Model,
     Operation, OperationUsage, Template, TemplateUsage, Test, Transformation,

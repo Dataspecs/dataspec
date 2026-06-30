@@ -19,13 +19,13 @@ serde_json = "1"
 walkdir = "2"
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
-subst = "0.3.8"
 uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 gcp-bigquery-client = { version = "0.20", optional = true }
 tokio-postgres = { version = "0.7", optional = true }
+mustache = "0.9"
 
 [features]
 default = []

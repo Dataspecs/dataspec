@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::entities::execution_plan::{ExecutionStep, ExecutionStepType};
@@ -10,6 +12,7 @@ pub struct Template {
     pub sql_code: String,
     pub dependent_tables: Vec<String>,
     pub used_variables: Option<Vec<String>>,
+    pub default_props: Option<HashMap<String, String>>,
     pub template: Option<TemplateUsage>,
 }
 

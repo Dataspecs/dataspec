@@ -22,9 +22,8 @@ pub enum Engine {
 impl Engine {
     pub async fn from_provider(ctx: &Ctx<'_>) -> Result<Self, Box<dyn Error>> {
         let provider = ctx
-            .props
-            .as_ref()
-            .and_then(|p| p.get("provider"))
+            .config_props()
+            .get("provider")
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_else(|| "dryrun".to_string());
 

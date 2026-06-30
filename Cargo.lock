@@ -312,11 +312,11 @@ dependencies = [
  "chrono",
  "clap",
  "gcp-bigquery-client",
+ "mustache",
  "pretty_assertions",
  "pulldown-cmark",
  "serde",
  "serde_json",
- "subst",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -524,7 +524,7 @@ dependencies = [
  "async-trait",
  "dyn-clone",
  "hyper 1.10.1",
- "log",
+ "log 0.4.32",
  "reqwest",
  "serde",
  "serde_json",
@@ -542,7 +542,7 @@ version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfe4fbac503b8d1f88e6676011885f34b7174f46e59956bba534ba83abded4df"
 dependencies = [
- "unicode-width 0.2.2",
+ "unicode-width",
 ]
 
 [[package]]
@@ -753,7 +753,7 @@ dependencies = [
  "futures-util",
  "http 0.2.12",
  "hyper 0.14.32",
- "log",
+ "log 0.4.32",
  "rustls 0.22.4",
  "rustls-native-certs",
  "rustls-pki-types",
@@ -810,7 +810,7 @@ dependencies = [
  "core-foundation-sys",
  "iana-time-zone-haiku",
  "js-sys",
- "log",
+ "log 0.4.32",
  "wasm-bindgen",
  "windows-core",
 ]
@@ -1019,6 +1019,15 @@ dependencies = [
 
 [[package]]
 name = "log"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e19e8d5c34a3e0e2223db8e060f9e8264aeeb5c5fc64a4ee9965c062211c024b"
+dependencies = [
+ "log 0.4.32",
+]
+
+[[package]]
+name = "log"
 version = "0.4.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
@@ -1054,6 +1063,16 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "mustache"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51956ef1c5d20a1384524d91e616fb44dfc7d8f249bf696d49c97dd3289ecab5"
+dependencies = [
+ "log 0.3.9",
+ "serde",
 ]
 
 [[package]]
@@ -1417,7 +1436,7 @@ dependencies = [
  "hyper-rustls 0.27.9",
  "hyper-util",
  "js-sys",
- "log",
+ "log 0.4.32",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -1478,7 +1497,7 @@ version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf4ef73721ac7bcd79b2b315da7779d8fc09718c6b3d2d1b2d94850eb8c18432"
 dependencies = [
- "log",
+ "log 0.4.32",
  "ring",
  "rustls-pki-types",
  "rustls-webpki 0.102.8",
@@ -1781,16 +1800,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
-name = "subst"
-version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a9a86e5144f63c2d18334698269a8bfae6eece345c70b64821ea5b35054ec99"
-dependencies = [
- "memchr",
- "unicode-width 0.1.14",
-]
-
-[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1986,7 +1995,7 @@ dependencies = [
  "fallible-iterator",
  "futures-channel",
  "futures-util",
- "log",
+ "log 0.4.32",
  "parking_lot",
  "percent-encoding",
  "phf",
@@ -2128,7 +2137,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee855f1f400bd0e5c02d150ae5de3840039a3f54b025156404e34c23c03f47c3"
 dependencies = [
- "log",
+ "log 0.4.32",
  "once_cell",
  "tracing-core",
 ]
@@ -2191,12 +2200,6 @@ name = "unicode-properties"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d"
-
-[[package]]
-name = "unicode-width"
-version = "0.1.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 
 [[package]]
 name = "unicode-width"
@@ -2679,7 +2682,7 @@ dependencies = [
  "hyper 0.14.32",
  "hyper-rustls 0.25.0",
  "itertools",
- "log",
+ "log 0.4.32",
  "percent-encoding",
  "rustls 0.22.4",
  "rustls-pemfile 1.0.4",

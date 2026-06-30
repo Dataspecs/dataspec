@@ -35,6 +35,7 @@ This creates:
 ```
 my_pipeline/
 ├── Cargo.toml
+├── README.md                # project quick start and CLI reference
 ├── build.rs                 # calls spec_builder at compile time
 ├── data-specs/              # your markdown specs (source of truth)
 │   ├── config/config.md
@@ -201,12 +202,12 @@ Two rendering phases: **compilation** and **execution**.
 
 | Variable | When | Description |
 |----------|------|-------------|
-| `{{props__<key>}}` | Compile | Static config or template params (e.g. `{{props__sql}}`, `{{props__start_date}}`) |
-| `{{vars__<key>}}` | Runtime | CLI variables (e.g. `{{vars__report_year}}`) |
+| `{{props__<key>}}` | Compile | Static config or template params (e.g. `{{props__code}}`, `{{props__start_date}}`) |
+| `{{vars__<key>}}` / `{{var__<key>}}` | Runtime | CLI variables (e.g. `{{var__report_year}}`) |
 | `{{<model_name>}}` | Runtime | Table ID for a model (from catalog or `--mappings`) |
 | `{{session_id}}` | Runtime | UUID with unique session id of this execution |
 
-Variable syntax follows the [mustache](https://lib.rs/crates/mustache) crate: `{{name}}`. Use `{{vars__name}}` for CLI variables and `{{props__name}}` for config/template props.
+Variable syntax follows the [mustache](https://lib.rs/crates/mustache) crate: `{{name}}`. Use `{{var__name}}` (or `{{vars__name}}`) for CLI variables and `{{props__name}}` for config/template props.
 </details>
 
 ## Spec format

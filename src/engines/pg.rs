@@ -11,13 +11,11 @@ pub struct PgEngine {
 impl DbEngine for PgEngine {
     async fn init(ctx: &Ctx<'_>) -> Result<Box<Self>, Box<dyn Error>> {
         let connection_string = ctx
-            .props
-            .as_ref()
-            .ok_or("properties not found")?
+            .config_props()
             .get("connection_string")
             .map(|s| s.as_str())
             .ok_or(
-                "connection_string not found in properties. \
+                "connection_string not found in config props. \
                  Set connection_string in config (e.g. postgres://user:password@localhost:5432/dbname)",
             )?;
 

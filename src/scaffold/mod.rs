@@ -42,7 +42,7 @@ Dummy model for getting started.
 model
 
 ## Transformation
-## Code
+### Code
 ```sql
 SELECT 1 AS id
 ```
@@ -108,11 +108,15 @@ pub fn create_project(name: &str, path: &Path) -> Result<(), String> {
         ));
     }
 
-    write_project_files(&project_dir, &dataspec_path)?;
+    write_project_files(&project_dir, &dataspec_path, name)?;
     Ok(())
 }
 
-fn write_project_files(project_dir: &Path, dataspec_path: &Path) -> Result<(), String> {
+fn write_project_files(
+    project_dir: &Path,
+    dataspec_path: &Path,
+    project_name: &str,
+) -> Result<(), String> {
     fs::write(project_dir.join("src/main.rs"), MAIN_TEMPLATE)
         .map_err(|e| format!("failed to write main.rs: {e}"))?;
     fs::write(project_dir.join("src/lib.rs"), LIB_TEMPLATE)
@@ -123,8 +127,103 @@ fn write_project_files(project_dir: &Path, dataspec_path: &Path) -> Result<(), S
     patch_cargo_toml(project_dir, dataspec_path)?;
     patch_gitignore(project_dir)?;
     write_dummy_specs(project_dir)?;
+    fs::write(project_dir.join("README.md"), readme_content(project_name))
+        .map_err(|e| format!("failed to write README.md: {e}"))?;
 
     Ok(())
+}
+
+fn readme_content(project_name: &str) -> String {
+    format!(
+        r#"# {project_name}
+
+Data Specs project — markdown specs in `data-specs/` are compiled at build time into `src/data.rs`.
+
+## Quick start
+
+```bash
+cargo build
+cargo run -- transform --names dummy_model
+cargo run -- list --models
+```
+
+## Project layout
+
+```
+{project_name}/
+├── Cargo.toml
+├── README.md
+├── build.rs
+├── data-specs/
+│   ├── config/config.md
+│   ├── models/
+│   ├── templates/
+│   ├── operations/
+│   └── tests/
+└── src/
+    ├── main.rs
+    ├── lib.rs
+    └── data.rs              # generated — do not edit (gitignored)
+```
+
+## CLI
+
+### Transform
+
+Run transformations for models by name or tag:
+
+```bash
+# Single model (uses default transformation)
+cargo run -- transform --names dummy_model
+
+# Explicit transformation
+cargo run -- transform --names dummy_model::my_transformation_v2
+
+# By tags
+cargo run -- transform --tags core,reporting
+
+# Runtime variables and table mappings
+cargo run -- transform --names my_model \
+  --vars report_year=2024 \
+  --mappings my_model=dataset.table_id
+
+# JSON output
+cargo run -- transform --names dummy_model --json
+```
+
+### List
+
+Inspect catalog contents:
+
+```bash
+cargo run -- list --models
+cargo run -- list --operations
+cargo run -- list --transformations
+cargo run -- list --templates
+cargo run -- list --tests
+
+# By name
+cargo run -- list --names dummy_model --models
+
+# JSON
+cargo run -- list --models --json
+```
+
+## Storage backends
+
+Set `provider` in `data-specs/config/config.md`:
+
+| `provider` | Description |
+|------------|-------------|
+| `dryrun` | Default. Logs SQL, no warehouse call |
+| `bq` | Google BigQuery |
+| `pg` / `postgres` | PostgreSQL |
+
+## Spec format
+
+See the [specs README](https://github.com/Dataspecs/specs/blob/main/README.md) for the full format reference.
+"#
+    )
 }
 
 fn patch_cargo_toml(project_dir: &Path, dataspec_path: &Path) -> Result<(), String> {

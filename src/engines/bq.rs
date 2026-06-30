@@ -12,11 +12,7 @@ pub struct BQEngine {
 
 impl DbEngine for BQEngine {
     async fn init(ctx: &Ctx<'_>) -> Result<Box<Self>, Box<dyn Error>> {
-        let service_account_path = ctx
-            .props
-            .as_ref()
-            .ok_or("properties not found")?
-            .get("service_account_path");
+        let service_account_path = ctx.config_props().get("service_account_path");
 
         let client = if let Some(path) = service_account_path {
             Client::from_service_account_key_file(path).await?
@@ -25,11 +21,9 @@ impl DbEngine for BQEngine {
         };
 
         let project_id = ctx
-            .props
-            .as_ref()
-            .ok_or("properties not found")?
+            .config_props()
             .get("project_id")
-            .ok_or("project_id not found in properties")?;
+            .ok_or("project_id not found in config props")?;
 
         Ok(Box::new(BQEngine {
             client,

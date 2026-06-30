@@ -28,6 +28,12 @@ pub enum ParseError {
 
     #[error("invalid entity name for static generation: `{name}`")]
     InvalidEntityName { name: String },
+
+    #[error("template `{template}` not found when compiling `{entity}`")]
+    TemplateNotFound { template: String, entity: String },
+
+    #[error("prop `props__{prop}` not found when compiling `{entity}`")]
+    PropNotFound { prop: String, entity: String },
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;

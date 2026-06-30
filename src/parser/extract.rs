@@ -22,6 +22,7 @@ struct RefWithProps {
 }
 
 /// Parsed transformation body fields shared by models and transformations.
+#[derive(Default)]
 pub struct ParsedTransformationBody {
     pub columns: Option<Vec<Column>>,
     pub tests: Option<Vec<String>>,

@@ -87,6 +87,15 @@ fn section_description(section: &Section) -> Option<String> {
     }
 }
 
+fn optional_props_hashmap(body: &str) -> Option<std::collections::HashMap<String, String>> {
+    let map = parse_props_hashmap(body);
+    if map.is_empty() {
+        None
+    } else {
+        Some(map)
+    }
+}
+
 fn parse_config(root: &Section) -> Config {
     let type_section = root.child("Type").map(|s| s.body_trimmed()).unwrap_or("");
     let props = parse_props_hashmap(type_section);
@@ -105,13 +114,10 @@ fn parse_model_spec(root: &Section, description: Option<String>) -> Result<Parse
         .or_else(|| root.child("Default Transformation"))
         .and_then(|s| parse_link_label(s.body_trimmed()));
 
-    let transformation_section = root
+    let body = root
         .child("Transformation")
-        .filter(|s| !s.children.is_empty() || !s.body_trimmed().is_empty());
-
-    let body = transformation_section
         .map(parse_transformation_body)
-        .unwrap_or_else(|| parse_transformation_body(root));
+        .unwrap_or_default();
 
     let has_embedded_sql = !body.sql_code.is_empty();
     let default_transformation = if let Some(label) = default_transformation_link {
@@ -186,6 +192,7 @@ fn parse_template(root: &Section, description: Option<String>) -> Template {
     let nested_template = transformation
         .and_then(|s| s.child("Template"))
         .and_then(|s| parse_template_usage(s.body_trimmed()));
+    let default_props = transformation.and_then(|s| optional_props_hashmap(s.body_trimmed()));
     let sql_code = transformation
         .and_then(|s| s.child("Code"))
         .and_then(|s| extract_sql(s.body_trimmed()))
@@ -196,12 +203,14 @@ fn parse_template(root: &Section, description: Option<String>) -> Template {
         sql_code,
         dependent_tables: vec![],
         used_variables: None,
+        default_props,
         template: nested_template,
     }
 }
 
 fn parse_test(root: &Section, description: Option<String>) -> Test {
     let transformation = root.child("Transformation");
+    let default_props = transformation.and_then(|s| optional_props_hashmap(s.body_trimmed()));
     let sql_code = transformation
         .and_then(|s| s.child("Code"))
         .and_then(|s| extract_sql(s.body_trimmed()))
@@ -212,6 +221,7 @@ fn parse_test(root: &Section, description: Option<String>) -> Test {
         sql_code,
         dependent_tables: vec![],
         used_variables: None,
+        default_props,
     }
 }
 

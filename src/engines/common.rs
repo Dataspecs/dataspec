@@ -1,4 +1,4 @@
-use crate::context::ctx::Ctx;
+use crate::context::{render_runtime, Ctx};
 use crate::entities::{ExecutionPlan, ExecutionStepJson};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -55,7 +55,7 @@ pub trait DbEngine {
             for step in steps {
                 tracing::info!("Execute {}", step.name());
                 tracing::debug!("Start rendering SQL for step: {}", step.name());
-                let sql = subst::substitute(step.sql(), ctx).unwrap_or_default();
+                let sql = render_runtime(step.sql(), ctx);
                 tracing::debug!("Executing SQL: {sql}");
 
                 let statistics = self.execute(&sql).await?;

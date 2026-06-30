@@ -10,7 +10,8 @@ impl DbEngine for DryRunEngine {
         Ok(Box::new(DryRunEngine))
     }
 
-    async fn execute(&self, _sql: &str) -> Result<ExecutionStatistics, Box<dyn Error>> {
+    async fn execute(&self, sql: &str) -> Result<ExecutionStatistics, Box<dyn Error>> {
+        tracing::info!("{sql}");
         Ok(ExecutionStatistics {
             total_bytes_processed: Some(1),
             num_dml_affected_rows: Some(0),

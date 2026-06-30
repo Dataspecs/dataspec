@@ -28,7 +28,7 @@ pub fn emit_catalog_rs(entities: &[(std::path::PathBuf, Entity)], config: &Confi
 
     for (_, entity) in entities {
         let name = entity.name();
-        let ident = entity_name_to_ident(name)?;
+        let ident = entity_name_to_ident(name)?.to_uppercase();
         match entity {
             Entity::Config(_) => {}
             Entity::Model(m) => partitioned.models.push((ident, m.clone())),

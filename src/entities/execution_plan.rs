@@ -1,6 +1,8 @@
-use serde::Serialize;
+use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Display;
+
+use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 pub enum ExecutionStepType {
@@ -28,6 +30,16 @@ pub trait ExecutionStep {
     fn name(&self) -> &str;
     fn sql(&self) -> &str;
     fn step_type(&self) -> ExecutionStepType;
+
+    /// Props from hook references, merged with config props at execution time.
+    fn runtime_props(&self) -> Option<&HashMap<String, String>> {
+        None
+    }
+
+    /// Whether this step is a hook operation that should resolve `{{props__*}}`.
+    fn is_hook_operation(&self) -> bool {
+        false
+    }
 
     fn to_json(&self) -> ExecutionStepJson {
         ExecutionStepJson {

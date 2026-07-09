@@ -281,6 +281,18 @@ mod tests {
     }
 
     #[test]
+    fn parses_embedded_model_hooks() {
+        let path = fixture("models/dummy_model.md");
+        let parsed = parse_spec_file(&path).expect("parse dummy_model");
+        let Entity::Transformation(t) = &parsed.derived[0] else {
+            panic!("expected derived transformation");
+        };
+        assert_eq!(t.pre_runs.as_ref().map(|runs| runs.len()), Some(2));
+        assert_eq!(t.post_runs.as_ref().map(|runs| runs.len()), Some(2));
+        assert_eq!(t.init_runs.as_ref().map(|runs| runs.len()), Some(1));
+    }
+
+    #[test]
     fn parses_dummy_model() {
         let path = fixture("models/dummy_model.md");
         let parsed = parse_spec_file(&path).expect("parse dummy_model");
@@ -315,6 +327,20 @@ mod tests {
         };
         assert_eq!(t.name, "dummy_model_v1");
         assert_eq!(t.model, "dummy_model");
+    }
+
+    #[test]
+    fn parses_transformation_tests_from_path() {
+        let path = fixture("transformations/dummy_model_v1.md");
+        let parsed = parse_spec_file(&path).expect("parse transformation");
+        let Entity::Transformation(t) = parsed.entity else {
+            panic!("expected transformation");
+        };
+        assert!(
+            t.tests
+                .as_ref()
+                .is_some_and(|tests| tests.contains(&"dummy_test".to_string()))
+        );
     }
 
     #[test]

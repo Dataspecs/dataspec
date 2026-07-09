@@ -6,6 +6,7 @@ use crate::parser::ast::Section;
 struct LinkRef {
     label: String,
     path: String,
+    #[allow(dead_code)]
     anchor: Option<String>,
 }
 
@@ -62,16 +63,22 @@ pub fn parse_list_items(body: &str) -> Vec<String> {
 /// Parse the first markdown link in body: `[label](path#anchor)`.
 fn parse_link(body: &str) -> Option<LinkRef> {
     let start = body.find('[')?;
-    let label_end = body[start + 1..].find(']')? + start + 1;
-    let label = body[start + 1..label_end].trim().to_string();
-    let after_label = &body[label_end + 1..];
-    let paren_start = after_label.find('(')?;
-    let paren_end = after_label[paren_start + 1..].find(')')? + paren_start + 1;
-    let target = after_label[paren_start + 1..paren_end].trim();
+    let after_open = &body[start + 1..];
+    let close = after_open.find("](")?;
+    let label = after_open[..close]
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>();
+    let after_paren = &after_open[close + 2..];
+    let paren_end = after_paren.find(')')?;
+    let target = after_paren[..paren_end]
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>();
     let (path, anchor) = target
         .split_once('#')
         .map(|(p, a)| (p.to_string(), Some(a.to_string())))
-        .unwrap_or_else(|| (target.to_string(), None));
+        .unwrap_or_else(|| (target, None));
     Some(LinkRef {
         label,
         path,
@@ -109,9 +116,7 @@ fn parse_ref_list(body: &str) -> Vec<RefWithProps> {
 }
 
 fn parse_ref_block(block: &str) -> Option<RefWithProps> {
-    let link_line = block.lines().find(|l| l.trim().starts_with("- "))?;
-    let link_body = link_line.trim().strip_prefix("- ").unwrap_or(link_line.trim());
-    let link = parse_link(link_body)?;
+    let link = parse_link(block)?;
     let props = block
         .find('|')
         .map(|i| parse_props_table(&block[i..]))
@@ -197,8 +202,17 @@ pub fn parse_template_usage(body: &str) -> Option<TemplateUsage> {
     })
 }
 
+fn test_name_from_ref(link: &LinkRef) -> String {
+    link.path
+        .rsplit('/')
+        .next()
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| segment.split('#').next().unwrap_or(segment).to_string())
+        .unwrap_or_else(|| link.label.clone())
+}
+
 fn refs_to_names(refs: Vec<RefWithProps>) -> Vec<String> {
-    refs.into_iter().map(|r| r.link.label).collect()
+    refs.into_iter().map(|r| test_name_from_ref(&r.link)).collect()
 }
 
 fn refs_to_operation_usages(refs: Vec<RefWithProps>) -> Vec<OperationUsage> {
@@ -311,6 +325,13 @@ mod tests {
     }
 
     #[test]
+    fn parses_multiline_markdown_link() {
+        let link = parse_link("- [dummy_test\n](../tests/dummy_test)").unwrap();
+        assert_eq!(link.label, "dummy_test");
+        assert_eq!(link.path, "../tests/dummy_test");
+    }
+
+    #[test]
     fn parses_props_table() {
         let table = "| Key | Value | Description |\n| --- | --- | --- |\n| `a` | `1` | desc |\n";
         let props = parse_props_table(table);
@@ -318,5 +339,19 @@ mod tests {
         assert_eq!(props[0].key, "a");
         assert_eq!(props[0].value, "1");
         assert_eq!(props[0].description.as_deref(), Some("desc"));
+    }
+
+    #[test]
+    fn parses_tests_section_body_from_dummy_model_v1() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../specs/data-specs/transformations/dummy_model_v1.md");
+        let source = std::fs::read_to_string(path).unwrap();
+        let root = &crate::parser::parse_sections(&source)[0];
+        let body = root.child("Tests").unwrap().body_trimmed();
+        let names = refs_to_names(parse_ref_list(body));
+        assert!(
+            names.contains(&"dummy_test".to_string()),
+            "body={body:?}, names={names:?}"
+        );
     }
 }

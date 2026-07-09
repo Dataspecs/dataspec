@@ -4,6 +4,7 @@ use crate::entities::config::Config;
 use crate::entities::execution_plan::ExecutionStep;
 use crate::entities::model::Model;
 use crate::entities::operation::Operation;
+use crate::entities::operation_usage::OperationUsage;
 use crate::entities::template::Template;
 use crate::entities::test::Test;
 use crate::entities::transformation::Transformation;
@@ -124,17 +125,116 @@ impl DataCatalog {
         &self,
         name: &str,
         transformation_name: Option<&str>,
+        init: bool,
     ) -> Option<Vec<Box<dyn ExecutionStep>>> {
-        let model = self.models_by_name.get(name)?;
+        let transformation = self.get_transformation_for_model(name, transformation_name)?;
+        Some(self.transformation_pipeline(transformation, init))
+    }
 
-        let transformation: &Transformation = if let Some(transformation_name) = transformation_name
-        {
-            self.transformations_by_name.get(transformation_name)?
+    fn transformation_pipeline(
+        &self,
+        transformation: &'static Transformation,
+        init: bool,
+    ) -> Vec<Box<dyn ExecutionStep>> {
+        let mut steps: Vec<Box<dyn ExecutionStep>> = Vec::new();
+        if init {
+            steps.extend(self.hook_steps(transformation.init_runs.as_ref()));
+        }
+        steps.extend(self.hook_steps(transformation.pre_runs.as_ref()));
+        steps.push(Box::new(transformation.clone()));
+        steps.extend(self.hook_steps(transformation.post_runs.as_ref()));
+        steps
+    }
+
+    fn hook_steps(
+        &self,
+        usages: Option<&Vec<OperationUsage>>,
+    ) -> Vec<Box<dyn ExecutionStep>> {
+        usages
+            .into_iter()
+            .flatten()
+            .map(|usage| Box::new(usage.clone()) as Box<dyn ExecutionStep>)
+            .collect()
+    }
+
+    fn get_transformation_for_model(
+        &self,
+        name: &str,
+        transformation_name: Option<&str>,
+    ) -> Option<&'static Transformation> {
+        let model = self.models_by_name.get(name)?;
+        if let Some(transformation_name) = transformation_name {
+            self.transformations_by_name.get(transformation_name).copied()
         } else {
             self.transformations_by_name
-                .get(model.default_transformation.as_ref()?)?
-        };
-        Some(vec![Box::new(transformation.clone())])
+                .get(model.default_transformation.as_ref()?)
+                .copied()
+        }
+    }
+
+    pub fn get_tests_for_model(
+        &self,
+        name: &str,
+        transformation_name: Option<&str>,
+    ) -> Option<Vec<Box<dyn ExecutionStep>>> {
+        let transformation = self.get_transformation_for_model(name, transformation_name)?;
+        Some(self.tests_for_transformation(transformation))
+    }
+
+    pub fn lookup_tests_by_model_tags(
+        &self,
+        tags: Vec<String>,
+    ) -> Option<Vec<Box<dyn ExecutionStep>>> {
+        let mut models = Vec::new();
+        for tag in tags {
+            if let Some(found_models) = self.models_by_tag.get(&tag) {
+                models.extend(found_models.iter().copied());
+            }
+        }
+        let models = self.sort_models_by_deps(models);
+        let mut steps = Vec::new();
+        let mut seen = HashSet::new();
+        for model in models {
+            let transformation = self
+                .transformations_by_name
+                .get(model.default_transformation.as_ref()?)?;
+            for test in self.tests_for_transformation(transformation) {
+                if seen.insert(test.name().to_string()) {
+                    steps.push(test);
+                }
+            }
+        }
+        Some(steps)
+    }
+
+    fn tests_for_transformation(
+        &self,
+        transformation: &'static Transformation,
+    ) -> Vec<Box<dyn ExecutionStep>> {
+        let mut test_names = HashSet::new();
+        if let Some(tests) = &transformation.tests {
+            test_names.extend(tests.iter().cloned());
+        }
+        if let Some(columns) = &transformation.columns {
+            for column in columns {
+                if let Some(tests) = &column.tests {
+                    test_names.extend(tests.iter().cloned());
+                }
+            }
+        }
+
+        let mut names: Vec<String> = test_names.into_iter().collect();
+        names.sort();
+
+        names
+            .into_iter()
+            .map(|name| {
+                self.tests_by_name
+                    .get(&name)
+                    .map(|test| Box::new((*test).clone()) as Box<dyn ExecutionStep>)
+                    .unwrap_or_else(|| panic!("Can't find test {name}"))
+            })
+            .collect()
     }
 
     pub fn lookup_model_by_name(&self, name: &str) -> Option<Vec<Box<dyn ExecutionStep>>> {
@@ -186,7 +286,11 @@ impl DataCatalog {
         models
     }
 
-    pub fn lookup_models_by_tags(&self, tags: Vec<String>) -> Option<Vec<Box<dyn ExecutionStep>>> {
+    pub fn lookup_models_by_tags(
+        &self,
+        tags: Vec<String>,
+        init: bool,
+    ) -> Option<Vec<Box<dyn ExecutionStep>>> {
         let mut models = Vec::new();
         for tag in tags {
             if let Some(found_models) = self.models_by_tag.get(&tag) {
@@ -207,7 +311,7 @@ impl DataCatalog {
         Some(
             transformations
                 .into_iter()
-                .map(|transformation| Box::new((*transformation).clone()) as Box<dyn ExecutionStep>)
+                .flat_map(|transformation| self.transformation_pipeline(transformation, init))
                 .collect(),
         )
     }

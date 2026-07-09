@@ -5,6 +5,7 @@ use crate::entities::{
     Config, Entity, Operation, OperationUsage, Template, TemplateUsage, Test, Transformation,
 };
 use crate::error::{ParseError, Result};
+use crate::sql::get_dependent_tables;
 
 /// Compile-time rendering: inline templates and substitute `{{props__*}}`.
 pub fn compile_entities(entities: &mut [(std::path::PathBuf, Entity)], config: &Config) -> Result<()> {
@@ -48,6 +49,7 @@ fn compile_transformation(
         &entity_name,
     )?;
     transformation.template = None;
+    transformation.dependent_tables = get_dependent_tables(&transformation.sql_code);
     compile_operation_usages(&mut transformation.pre_runs, config_props, &entity_name)?;
     compile_operation_usages(&mut transformation.post_runs, config_props, &entity_name)?;
     compile_operation_usages(&mut transformation.init_runs, config_props, &entity_name)?;
@@ -69,6 +71,7 @@ fn compile_operation(
         &entity_name,
     )?;
     operation.template = None;
+    operation.dependent_tables = get_dependent_tables(&operation.sql_code);
     Ok(())
 }
 
@@ -77,6 +80,7 @@ fn compile_test(test: &mut Test, config_props: &HashMap<String, String>) -> Resu
     let mut props = config_props.clone();
     merge_props(&mut props, test.default_props.as_ref(), config_props, &entity_name)?;
     test.sql_code = render_compile_checked(&test.sql_code, &props, &entity_name, &[])?;
+    test.dependent_tables = get_dependent_tables(&test.sql_code);
     Ok(())
 }
 
@@ -260,6 +264,60 @@ mod tests {
         });
         assert!(template.is_some());
         assert!(template.unwrap().sql_code.contains("{{props__code}}"));
+    }
+
+    #[test]
+    fn compile_fills_dependent_tables_after_render() {
+        let mut entities = parse_spec_dir(fixture_dir()).unwrap();
+        let config = entities
+            .iter()
+            .find_map(|(_, e)| match e {
+                Entity::Config(c) => Some(c.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+
+        let mut config = config;
+        config.props.insert("vata".into(), "42".into());
+
+        compile_entities(&mut entities, &config).unwrap();
+
+        let transformation = entities.iter().find_map(|(_, e)| match e {
+            Entity::Transformation(t) if t.name == "dummy_model__default_transformation" => {
+                Some(t.clone())
+            }
+            _ => None,
+        });
+        let transformation = transformation.expect("embedded model transformation");
+        assert_eq!(
+            transformation.dependent_tables,
+            vec!["{{dummy_model}}".to_string()]
+        );
+
+        let mut entities = vec![(
+            PathBuf::from("inline.md"),
+            Entity::Transformation(Transformation {
+                name: "t_with_tables".into(),
+                sql_code: "SELECT a.id FROM alpha a JOIN beta b ON a.id = b.a_id".into(),
+                model: "m".into(),
+                dependent_tables: vec![],
+                used_variables: None,
+                template: None,
+                columns: None,
+                tests: None,
+                pre_runs: None,
+                post_runs: None,
+                init_runs: None,
+            }),
+        )];
+        compile_entities(&mut entities, &Config::default()).unwrap();
+        let Entity::Transformation(t) = &entities[0].1 else {
+            panic!("expected transformation");
+        };
+        assert_eq!(
+            t.dependent_tables,
+            vec!["alpha".to_string(), "beta".to_string()]
+        );
     }
 
     #[test]

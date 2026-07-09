@@ -1,5 +1,6 @@
 pub mod build;
 pub mod context;
+mod sql;
 pub mod entities;
 pub mod engines;
 pub mod error;
@@ -8,7 +9,7 @@ pub mod parser;
 pub mod scaffold;
 
 pub use build::spec_builder;
-pub use context::{render, render_compile, render_runtime, Ctx};
+pub use context::{render, render_compile, render_runtime, render_runtime_step, Ctx};
 pub use entities::{
     Column, Config, DataCatalog, Entity, ExecutionPlan, ExecutionStep, ExecutionStepJson, Model,
     Operation, OperationUsage, Template, TemplateUsage, Test, Transformation,

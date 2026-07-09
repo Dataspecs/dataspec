@@ -26,6 +26,7 @@ chrono = { version = "0.4", features = ["serde"] }
 gcp-bigquery-client = { version = "0.20", optional = true }
 tokio-postgres = { version = "0.7", optional = true }
 mustache = "0.9"
+sqlparser = "0.59"
 
 [features]
 default = []

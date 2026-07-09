@@ -36,6 +36,27 @@ pub fn render_runtime(template: &str, ctx: &Ctx<'_>) -> String {
     render_selective(template, |key| ctx.resolve_runtime(key))
 }
 
+/// Like [`render_runtime`], but also resolves `{{props__*}}` from hook props and config.
+pub fn render_runtime_step(
+    template: &str,
+    ctx: &Ctx<'_>,
+    step_props: Option<&HashMap<String, String>>,
+) -> String {
+    render_selective(template, |key| {
+        if let Some(name) = key.strip_prefix("props__") {
+            if let Some(props) = step_props {
+                if let Some(value) = props.get(name) {
+                    return Some(value.clone());
+                }
+            }
+            return ctx
+                .data_catalog
+                .and_then(|catalog| catalog.config.props.get(name).cloned());
+        }
+        ctx.resolve_runtime(key)
+    })
+}
+
 /// Backwards-compatible alias for [`render_runtime`].
 pub fn render(template: &str, ctx: &Ctx<'_>) -> String {
     render_runtime(template, ctx)
@@ -45,13 +66,63 @@ fn render_selective<F>(template: &str, resolve: F) -> String
 where
     F: Fn(&str) -> Option<String>,
 {
-    let compiled = compile_str(template).unwrap_or_else(|e| {
+    let unescaped_template = disable_html_escaping(template);
+    let compiled = compile_str(&unescaped_template).unwrap_or_else(|e| {
         panic!("Failed to compile mustache template: {e}");
     });
     let data = selective_mustache_data(&compiled, template, resolve);
     compiled
         .render_data_to_string(&data)
         .unwrap_or_else(|e| panic!("Failed to render mustache template: {e}"))
+}
+
+/// Rewrites plain value tags (`{{tag}}`) to triple-stache (`{{{tag}}}`) so
+/// mustache renders them raw instead of HTML-escaping quotes, ampersands, etc.
+/// Section/comment tags (`#`, `^`, `/`, `!`, `&`) and existing `{{{tag}}}` are left untouched.
+fn disable_html_escaping(source: &str) -> String {
+    let mut output = String::with_capacity(source.len());
+    let mut rest = source;
+    loop {
+        let Some(start) = rest.find("{{") else {
+            output.push_str(rest);
+            break;
+        };
+        output.push_str(&rest[..start]);
+        if rest[start..].starts_with("{{{") {
+            let Some(end) = rest[start..].find("}}}") else {
+                output.push_str(&rest[start..]);
+                break;
+            };
+            output.push_str(&rest[start..start + end + 3]);
+            rest = &rest[start + end + 3..];
+            continue;
+        }
+        let after_open = &rest[start + 2..];
+        let Some(end) = after_open.find("}}") else {
+            output.push_str("{{");
+            output.push_str(after_open);
+            break;
+        };
+        let tag = &after_open[..end];
+        let trimmed = tag.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || trimmed.starts_with('^')
+            || trimmed.starts_with('/')
+            || trimmed.starts_with('!')
+            || trimmed.starts_with('&')
+        {
+            output.push_str("{{");
+            output.push_str(tag);
+            output.push_str("}}");
+        } else {
+            output.push_str("{{{");
+            output.push_str(tag);
+            output.push_str("}}}");
+        }
+        rest = &after_open[end + 2..];
+    }
+    output
 }
 
 fn selective_mustache_data<F>(
@@ -140,7 +211,7 @@ pub(crate) fn extract_mustache_tags(source: &str) -> HashSet<String> {
         let Some(end) = rest.find("}}") else {
             break;
         };
-        let tag = rest[..end].trim();
+        let tag = rest[..end].trim().trim_start_matches('{');
         if !tag.is_empty()
             && !tag.starts_with('#')
             && !tag.starts_with('^')
@@ -177,6 +248,22 @@ mod tests {
         }));
         catalog.register_model(model);
         catalog
+    }
+
+    #[test]
+    fn render_runtime_step_substitutes_hook_props() {
+        let catalog = catalog_with_model();
+        let mut ctx = Ctx::new();
+        ctx.set_data_catalog(&catalog);
+
+        let sql = "SELECT {{props__start_block}} FROM {{dummy_model}}";
+        let rendered = render_runtime_step(
+            sql,
+            &ctx,
+            Some(&HashMap::from([("start_block".into(), "100".into())])),
+        );
+
+        assert_eq!(rendered, "SELECT 100 FROM dataset.dummy_model");
     }
 
     #[test]
@@ -240,6 +327,34 @@ mod tests {
         let rendered = render_runtime(sql, &ctx);
 
         assert_eq!(rendered, "SELECT 2023");
+    }
+
+    #[test]
+    fn render_runtime_does_not_html_escape_quotes() {
+        let catalog = catalog_with_model();
+        let mut ctx = Ctx::new();
+        ctx.set_vars(HashMap::from([("year".into(), "2024".into())]));
+        ctx.set_env_vars(HashMap::new());
+        ctx.set_data_catalog(&catalog);
+
+        let sql = r#"SELECT 1, {{vars__year}} AS id, "{{session_id}}", 10"#;
+        let rendered = render_runtime(sql, &ctx);
+
+        assert!(rendered.contains('"'));
+        assert!(!rendered.contains("&quot;"));
+        assert!(rendered.contains(&ctx.session_id));
+        assert_eq!(
+            rendered,
+            format!(r#"SELECT 1, 2024 AS id, "{session_id}", 10"#, session_id = ctx.session_id)
+        );
+    }
+
+    #[test]
+    fn disable_html_escaping_leaves_existing_triple_stache_untouched() {
+        assert_eq!(
+            disable_html_escaping("SELECT {{{session_id}}}"),
+            "SELECT {{{session_id}}}"
+        );
     }
 
     #[test]

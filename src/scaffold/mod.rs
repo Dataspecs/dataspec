@@ -168,9 +168,18 @@ cargo run -- list --models
 
 ## CLI
 
+`transform`, `apply`, and `test` share the same runtime flags: `--names`, `--tags`, `--vars`, `--mappings`, `--debug`, and `--json`. Names and tags select different entity kinds depending on the command (see below). `transform` also accepts `--init` to run init hooks.
+
 ### Transform
 
-Run transformations for models by name or tag:
+Run transformations for models by name or tag. When a transformation defines hooks, the executor runs them around the transformation SQL in this order:
+
+1. **Init** — only when `--init` is passed
+2. **Pre** — always
+3. **Transformation** — the model build SQL
+4. **Post** — always
+
+Hooks reference operations with optional prop overrides. Define them under `## Hooks` in a transformation spec, or under `### Hooks` in an embedded model transformation. See the [spec format reference](https://github.com/Dataspecs/specs/blob/main/README.md#spec-format-reference) for `Pre`, `Post`, and `Init` sections.
 
 ```bash
 # Single model (uses default transformation)
@@ -178,6 +187,9 @@ cargo run -- transform --names dummy_model
 
 # Explicit transformation
 cargo run -- transform --names dummy_model::my_transformation_v2
+
+# Run init hooks (e.g. one-time table setup) before pre/transformation/post
+cargo run -- transform --names dummy_model --init
 
 # By tags
 cargo run -- transform --tags core,reporting
@@ -189,6 +201,71 @@ cargo run -- transform --names my_model \
 
 # JSON output
 cargo run -- transform --names dummy_model --json
+```
+
+Example hooks in a transformation spec:
+
+```markdown
+## Hooks
+### Pre
+- [eth_set_block_range](../operations/eth_set_block_range)
+    | Key | Value | Description |
+    | --- | --- | --- |
+    | `start_block` | `{{props__eth_default_start_block}}` | Inclusive lower bound |
+    | `end_block` | `999999999` | Inclusive upper bound |
+### Post
+- [eth_update_watermark](../operations/eth_update_watermark)
+    | Key | Value | Description |
+    | --- | --- | --- |
+    | `model_name` | `eth_blocks` | Model name |
+    | `end_block` | `{{props__end_block}}` | Last processed block |
+### Init
+- [create_watermark_table](../operations/create_watermark_table)
+```
+
+Hook operations resolve `{{props__*}}` from the hook's prop table at execution time, falling back to project config props.
+
+### Apply
+
+Run operations by name or tag:
+
+```bash
+# Single operation
+cargo run -- apply --names dummy_operation
+
+# By tags
+cargo run -- apply --tags maintenance
+
+# Runtime variables and table mappings
+cargo run -- apply --names dummy_operation \
+  --vars report_year=2024 \
+  --mappings dummy_model=dataset.table_id
+
+# JSON output
+cargo run -- apply --names dummy_operation --json
+```
+
+### Test
+
+Run tests linked to models (from the default or explicit transformation, plus column-level tests):
+
+```bash
+# Single model (uses default transformation)
+cargo run -- test --names dummy_model
+
+# Explicit transformation
+cargo run -- test --names dummy_model::my_transformation_v2
+
+# By tags
+cargo run -- test --tags core,reporting
+
+# Runtime variables and table mappings
+cargo run -- test --names dummy_model \
+  --vars report_year=2024 \
+  --mappings dummy_model=dataset.table_id
+
+# JSON output
+cargo run -- test --names dummy_model --json
 ```
 
 ### List

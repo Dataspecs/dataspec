@@ -44,7 +44,7 @@ pub fn emit_catalog_rs(entities: &[(std::path::PathBuf, Entity)], config: &Confi
     );
     writeln!(
         out,
-        "use dataspec::{{Config, DataCatalog, Model, Operation, Template, Test, Transformation}};"
+        "use dataspec::{{Config, DataCatalog, Model, Operation, OperationUsage, Template, Test, Transformation}};"
     )
     .unwrap();
     writeln!(out, "use std::collections::HashMap;").unwrap();

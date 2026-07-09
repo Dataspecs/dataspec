@@ -11,67 +11,74 @@ pub struct BQEngine {
 }
 
 impl DbEngine for BQEngine {
-    async fn init(ctx: &Ctx<'_>) -> Result<Box<Self>, Box<dyn Error>> {
-        let service_account_path = ctx.config_props().get("service_account_path");
+    fn init(ctx: &Ctx<'_>) -> impl std::future::Future<Output = Result<Box<Self>, Box<dyn Error>>> + Send {
+        async move {
+            let service_account_path = ctx.config_props().get("service_account_path");
 
-        let client = if let Some(path) = service_account_path {
-            Client::from_service_account_key_file(path).await?
-        } else {
-            Client::from_application_default_credentials().await?
-        };
+            let client = if let Some(path) = service_account_path {
+                Client::from_service_account_key_file(path).await?
+            } else {
+                Client::from_application_default_credentials().await?
+            };
 
-        let project_id = ctx
-            .config_props()
-            .get("project_id")
-            .ok_or("project_id not found in config props")?;
+            let project_id = ctx
+                .config_props()
+                .get("project_id")
+                .ok_or("project_id not found in config props")?;
 
-        Ok(Box::new(BQEngine {
-            client,
-            project_id: project_id.to_string(),
-        }))
+            Ok(Box::new(BQEngine {
+                client,
+                project_id: project_id.to_string(),
+            }))
+        }
     }
 
-    async fn execute(&self, sql: &str) -> Result<ExecutionStatistics, Box<dyn Error>> {
-        let query_request = QueryRequest::new(sql);
-        let rs = self
-            .client
-            .job()
-            .query(&self.project_id, query_request)
-            .await?;
-        let job_reference = rs
-            .query_response()
-            .job_reference
-            .as_ref()
-            .ok_or("Job reference is not available")?;
-
-        let location = job_reference.location.as_ref().map(|x| x.as_str());
-        let job = self.client.job().get_job(
-            job_reference
-                .project_id
-                .as_deref()
-                .ok_or("project_id not found")?,
-            job_reference.job_id.as_deref().ok_or("job_id not found")?,
-            location,
-        ).await?;
-
-        let stats = job
-            .statistics
-            .and_then(|s| s.query)
-            .ok_or("Stats are not available")?;
-
-        Ok(ExecutionStatistics {
-            total_bytes_processed: stats
-                .total_bytes_billed
+    fn execute(
+        &self,
+        sql: &str,
+    ) -> impl std::future::Future<Output = Result<ExecutionStatistics, Box<dyn Error>>> + Send {
+        async move {
+            let query_request = QueryRequest::new(sql);
+            let rs = self
+                .client
+                .job()
+                .query(&self.project_id, query_request)
+                .await?;
+            let job_reference = rs
+                .query_response()
+                .job_reference
                 .as_ref()
-                .and_then(|b| b.parse::<i64>().ok()),
-            num_dml_affected_rows: stats
-                .num_dml_affected_rows
-                .and_then(|s| s.parse::<i64>().ok()),
-            cache_hit: stats.cache_hit,
-            bytes_billed: stats
-                .total_bytes_billed
-                .as_ref()
-                .and_then(|b| b.parse::<i64>().ok()),
-        })
+                .ok_or("Job reference is not available")?;
+
+            let location = job_reference.location.as_ref().map(|x| x.as_str());
+            let job = self.client.job().get_job(
+                job_reference
+                    .project_id
+                    .as_deref()
+                    .ok_or("project_id not found")?,
+                job_reference.job_id.as_deref().ok_or("job_id not found")?,
+                location,
+            ).await?;
+
+            let stats = job
+                .statistics
+                .and_then(|s| s.query)
+                .ok_or("Stats are not available")?;
+
+            Ok(ExecutionStatistics {
+                total_bytes_processed: stats
+                    .total_bytes_billed
+                    .as_ref()
+                    .and_then(|b| b.parse::<i64>().ok()),
+                num_dml_affected_rows: stats
+                    .num_dml_affected_rows
+                    .and_then(|s| s.parse::<i64>().ok()),
+                cache_hit: stats.cache_hit,
+                bytes_billed: stats
+                    .total_bytes_billed
+                    .as_ref()
+                    .and_then(|b| b.parse::<i64>().ok()),
+            })
+        }
     }
 }

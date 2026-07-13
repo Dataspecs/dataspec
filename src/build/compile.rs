@@ -133,9 +133,11 @@ fn compile_sql(
             config_props,
             entity_name,
         )?;
-        merge_props(&mut props, usage.props.as_ref(), config_props, entity_name)?;
         merge_props(&mut props, entity_defaults, config_props, entity_name)?;
         let rendered_inner = render_compile_checked(inner_sql, &props, entity_name, &[])?;
+        // Mention props apply when wrapping with the template body, not when rendering inner SQL.
+        let render_ctx = props.clone();
+        merge_props(&mut props, usage.props.as_ref(), &render_ctx, entity_name)?;
         props.insert("code".to_string(), rendered_inner);
         render_compile_checked(&body_sql, &props, entity_name, &[])
     } else {
@@ -200,14 +202,39 @@ fn compile_operation_usages(
 }
 
 /// `props__code` is filled with the caller's inner SQL when a template is included.
-const TEMPLATE_CALLER_PROPS: &[&str] = &["code"];
+const TEMPLATE_CALLER_PROP: &str = "code";
+
+/// Props left for callers to fill via `TemplateUsage` when compiling a template definition.
+fn template_definition_deferred_props(
+    template: &str,
+    props: &HashMap<String, String>,
+) -> Vec<String> {
+    let mut deferred = vec![TEMPLATE_CALLER_PROP.to_string()];
+    for key in crate::context::render::extract_mustache_tags(template) {
+        let Some(prop) = key.strip_prefix("props__") else {
+            continue;
+        };
+        if prop == TEMPLATE_CALLER_PROP {
+            continue;
+        }
+        let unresolved = props
+            .get(prop)
+            .is_none_or(|value| value.is_empty());
+        if unresolved && !deferred.iter().any(|d| d == prop) {
+            deferred.push(prop.to_string());
+        }
+    }
+    deferred
+}
 
 fn render_template_definition(
     template: &str,
     props: &HashMap<String, String>,
     entity_name: &str,
 ) -> Result<String> {
-    render_compile_checked(template, props, entity_name, TEMPLATE_CALLER_PROPS)
+    let deferred = template_definition_deferred_props(template, props);
+    let deferred_refs: Vec<&str> = deferred.iter().map(String::as_str).collect();
+    render_compile_checked(template, props, entity_name, &deferred_refs)
 }
 
 fn render_compile_checked(
@@ -240,6 +267,30 @@ mod tests {
 
     fn fixture_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../specs/data-specs")
+    }
+
+    #[test]
+    fn compile_leaves_mention_props_in_template_definition() {
+        let mut entities = vec![(
+            PathBuf::from("wrapper.md"),
+            Entity::Template(Template {
+                name: "block_filter".into(),
+                description: None,
+                sql_code: "SELECT * FROM src WHERE block_number BETWEEN {{props__start_block}} AND {{props__end_block}}".into(),
+                dependent_tables: vec![],
+                used_variables: None,
+                default_props: None,
+                template: None,
+            }),
+        )];
+
+        compile_entities(&mut entities, &Config::default()).unwrap();
+
+        let Entity::Template(t) = &entities[0].1 else {
+            panic!("expected template");
+        };
+        assert!(t.sql_code.contains("{{props__start_block}}"));
+        assert!(t.sql_code.contains("{{props__end_block}}"));
     }
 
     #[test]
@@ -317,6 +368,98 @@ mod tests {
         assert_eq!(
             t.dependent_tables,
             vec!["alpha".to_string(), "beta".to_string()]
+        );
+    }
+
+    #[test]
+    fn compile_applies_template_mention_props_to_wrapper_only() {
+        let mut entities = vec![(
+            PathBuf::from("inner.md"),
+            Entity::Transformation(Transformation {
+                name: "t".into(),
+                sql_code: "SELECT {{props__only_in_inner}}".into(),
+                model: "m".into(),
+                dependent_tables: vec![],
+                used_variables: None,
+                template: Some(TemplateUsage {
+                    name: "wrapper".into(),
+                    props: Some(HashMap::from([(
+                        "only_in_mention".into(),
+                        "mention_value".into(),
+                    )])),
+                }),
+                columns: None,
+                tests: None,
+                pre_runs: None,
+                post_runs: None,
+                init_runs: None,
+            }),
+        ), (
+            PathBuf::from("wrapper.md"),
+            Entity::Template(Template {
+                name: "wrapper".into(),
+                description: None,
+                sql_code: "WRAPPER {{props__only_in_mention}} CODE {{props__code}}".into(),
+                dependent_tables: vec![],
+                used_variables: None,
+                default_props: Some(HashMap::from([("only_in_mention".into(), "".into())])),
+                template: None,
+            }),
+        )];
+
+        let config = Config {
+            props: HashMap::from([("only_in_inner".into(), "inner_value".into())]),
+        };
+
+        compile_entities(&mut entities, &config).unwrap();
+
+        let Entity::Transformation(t) = &entities[0].1 else {
+            panic!("expected transformation");
+        };
+        assert_eq!(
+            t.sql_code,
+            "WRAPPER mention_value CODE SELECT inner_value"
+        );
+    }
+
+    #[test]
+    fn compile_applies_template_mention_props() {
+        let mut entities = parse_spec_dir(fixture_dir()).unwrap();
+        let mut config = entities
+            .iter()
+            .find_map(|(_, e)| match e {
+                Entity::Config(c) => Some(c.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        config.props.insert("vata".into(), "42".into());
+
+        // Override table_name via template mention props.
+        for (_, entity) in entities.iter_mut() {
+            if let Entity::Transformation(t) = entity {
+                if t.name == "dummy_model_v1" {
+                    if let Some(template) = t.template.as_mut() {
+                        template.props = Some(HashMap::from([(
+                            "table_name".into(),
+                            "my_custom_table".into(),
+                        )]));
+                    }
+                }
+            }
+        }
+
+        compile_entities(&mut entities, &config).unwrap();
+
+        let sql = entities
+            .iter()
+            .find_map(|(_, e)| match e {
+                Entity::Transformation(t) if t.name == "dummy_model_v1" => Some(t.sql_code.clone()),
+                _ => None,
+            })
+            .expect("dummy_model_v1");
+        assert!(
+            sql.contains("my_custom_table"),
+            "expected mention props in compiled SQL, got: {sql}"
         );
     }
 

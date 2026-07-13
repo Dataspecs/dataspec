@@ -37,6 +37,19 @@ impl DbEngine for PgEngine {
         sql: &str,
     ) -> impl std::future::Future<Output = Result<ExecutionStatistics, Box<dyn Error>>> + Send {
         async move {
+            if is_read_query(sql) {
+                let rows = self.client.query(sql, &[]).await?;
+                tracing::debug!("Rows returned: {}", rows.len());
+
+                return Ok(ExecutionStatistics {
+                    total_bytes_processed: None,
+                    num_dml_affected_rows: None,
+                    num_rows: Some(rows.len() as i64),
+                    cache_hit: None,
+                    bytes_billed: None,
+                });
+            }
+
             let stmt = self.client.prepare(sql).await?;
             tracing::debug!("Executing prepared statement");
             let rows_affected = self.client.execute(&stmt, &[]).await?;
@@ -45,9 +58,20 @@ impl DbEngine for PgEngine {
             Ok(ExecutionStatistics {
                 total_bytes_processed: None,
                 num_dml_affected_rows: Some(rows_affected as i64),
+                num_rows: None,
                 cache_hit: None,
                 bytes_billed: None,
             })
         }
     }
+}
+
+fn is_read_query(sql: &str) -> bool {
+    let trimmed = sql.trim_start();
+    trimmed
+        .get(..6)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("select"))
+        || trimmed
+            .get(..4)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("with"))
 }

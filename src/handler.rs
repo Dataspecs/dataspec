@@ -4,7 +4,7 @@ use std::env;
 use clap::{Parser, Subcommand};
 
 use crate::context::ctx::Ctx;
-use crate::engines::Engine;
+use crate::engines::{Engine, TestStatus};
 use crate::entities::{
     DataCatalog, ExecutionPlan, ExecutionStep, ExecutionStepJson,
 };
@@ -323,6 +323,71 @@ async fn execute_plan(
     tracing::info!("Execution plan completed");
 }
 
+async fn execute_test_plan(
+    execution_plan: &ExecutionPlan,
+    ctx: &Ctx<'_>,
+    level: tracing::level_filters::LevelFilter,
+    json_output: bool,
+) {
+    init_tracing(level);
+
+    let engine = match Engine::from_provider(ctx).await {
+        Ok(eng) => eng,
+        Err(e) => exit_with_error(format!("Failed to init engine: {e}")),
+    };
+
+    tracing::info!("Session ID: {}", ctx.session_id);
+    tracing::info!("Starting test execution");
+    match engine.execute_test_plan(execution_plan, ctx).await {
+        Ok(results) => {
+            let mut passed = 0usize;
+            let mut failed = 0usize;
+            let mut errored = 0usize;
+
+            for step_result in &results.step_results {
+                match step_result.test_status {
+                    Some(TestStatus::Success) => {
+                        passed += 1;
+                        tracing::info!("PASS {}", step_result.step.name);
+                    }
+                    Some(TestStatus::Failed) => {
+                        failed += 1;
+                        tracing::error!(
+                            "FAIL {} ({} rows)",
+                            step_result.step.name,
+                            step_result.result.num_rows.unwrap_or(0)
+                        );
+                    }
+                    Some(TestStatus::Error) => {
+                        errored += 1;
+                        tracing::error!(
+                            "ERROR {}: {}",
+                            step_result.step.name,
+                            step_result
+                                .error
+                                .as_deref()
+                                .unwrap_or("unknown error")
+                        );
+                    }
+                    None => {}
+                }
+            }
+
+            tracing::info!(
+                "Tests completed: {passed} passed, {failed} failed, {errored} errored"
+            );
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&results).unwrap());
+            }
+            if failed > 0 || errored > 0 {
+                std::process::exit(1);
+            }
+        }
+        Err(e) => exit_with_error(format!("Test execution failed: {e}")),
+    }
+    tracing::info!("Test execution completed");
+}
+
 async fn run_with_runtime_args(
     catalog: &DataCatalog,
     args: RuntimeArgs,
@@ -332,6 +397,16 @@ async fn run_with_runtime_args(
     let ctx = setup_ctx(catalog, args.vars.as_deref(), args.mappings.as_deref());
     let execution_plan = build_plan(catalog, &args);
     execute_plan(&execution_plan, &ctx, level, args.json).await;
+}
+
+async fn run_tests(
+    catalog: &DataCatalog,
+    args: RuntimeArgs,
+) {
+    let level = log_level(args.json, args.debug);
+    let ctx = setup_ctx(catalog, args.vars.as_deref(), args.mappings.as_deref());
+    let execution_plan = build_test_plan(catalog, &args);
+    execute_test_plan(&execution_plan, &ctx, level, args.json).await;
 }
 
 /// Runtime CLI handler for generated data-spec projects.
@@ -394,7 +469,7 @@ pub async fn spec_handler(catalog: &DataCatalog) {
             debug,
             json,
         } => {
-            run_with_runtime_args(
+            run_tests(
                 catalog,
                 RuntimeArgs {
                     names,
@@ -405,7 +480,6 @@ pub async fn spec_handler(catalog: &DataCatalog) {
                     json,
                     init: false,
                 },
-                build_test_plan,
             )
             .await;
         }

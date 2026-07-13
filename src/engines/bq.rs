@@ -44,6 +44,11 @@ impl DbEngine for BQEngine {
                 .job()
                 .query(&self.project_id, query_request)
                 .await?;
+            let num_rows = rs
+                .query_response()
+                .total_rows
+                .as_ref()
+                .and_then(|value| value.parse::<i64>().ok());
             let job_reference = rs
                 .query_response()
                 .job_reference
@@ -73,6 +78,7 @@ impl DbEngine for BQEngine {
                 num_dml_affected_rows: stats
                     .num_dml_affected_rows
                     .and_then(|s| s.parse::<i64>().ok()),
+                num_rows,
                 cache_hit: stats.cache_hit,
                 bytes_billed: stats
                     .total_bytes_billed

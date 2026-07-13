@@ -19,6 +19,7 @@ impl DbEngine for DryRunEngine {
             Ok(ExecutionStatistics {
                 total_bytes_processed: Some(1),
                 num_dml_affected_rows: Some(0),
+                num_rows: Some(0),
                 cache_hit: Some(false),
                 bytes_billed: Some(0),
             })

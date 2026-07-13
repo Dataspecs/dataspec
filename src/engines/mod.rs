@@ -5,7 +5,7 @@ pub mod dryrun;
 #[cfg(feature = "pg")]
 pub mod pg;
 
-pub use common::{DbEngine, ExecutionPlanResults, ExecutionStatistics};
+pub use common::{DbEngine, ExecutionPlanResults, ExecutionStatistics, TestStatus};
 
 use crate::context::ctx::Ctx;
 use crate::entities::ExecutionPlan;
@@ -68,6 +68,20 @@ impl Engine {
             Engine::BQ(e) => e.execute_plan(plan, ctx).await,
             #[cfg(feature = "pg")]
             Engine::PG(e) => e.execute_plan(plan, ctx).await,
+        }
+    }
+
+    pub async fn execute_test_plan(
+        &self,
+        plan: &ExecutionPlan,
+        ctx: &Ctx<'_>,
+    ) -> Result<ExecutionPlanResults, Box<dyn Error>> {
+        match self {
+            Engine::DryRun(e) => e.execute_test_plan(plan, ctx).await,
+            #[cfg(feature = "bq")]
+            Engine::BQ(e) => e.execute_test_plan(plan, ctx).await,
+            #[cfg(feature = "pg")]
+            Engine::PG(e) => e.execute_test_plan(plan, ctx).await,
         }
     }
 }

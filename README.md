@@ -1,6 +1,14 @@
-# Data Specs
+## Data Specs
 
-Data Specs is a markdown-first data transformation framework. You define models, transformations, tests, operations, and templates in plain `.md` files. A Rust compiler turns those specs into a typed entity catalog at build time; a generated binary runs that catalog against your warehouse at runtime.
+Data Specs is a markdown-first data transformation framework. You define models, transformations, tests, operations, and templates in plain `.md`
+files. A Rust compiler turns those specs into a typed entity catalog at build time; a generated binary runs that catalog against your warehouse
+at runtime.
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Status: early](https://img.shields.io/badge/status-early--stage-orange)](#)
+
+This repo is the **compiler and runtime**. For the spec format itself, examples, and the "why Markdown instead of YAML+Jinja" case, see
+[`Dataspecs/specs`](https://github.com/Dataspecs/specs).
 
 ---
 

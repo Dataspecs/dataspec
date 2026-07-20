@@ -9,15 +9,41 @@ use crate::sql::get_dependent_tables;
 
 /// Compile-time rendering: inline templates and substitute `{{props__*}}`.
 pub fn compile_entities(entities: &mut [(std::path::PathBuf, Entity)], config: &Config) -> Result<()> {
-    let templates = index_templates(entities);
+    let initial_templates = index_templates(entities);
+    let mut compiled_templates = initial_templates.clone();
+
+    for _ in 0..initial_templates.len().max(1) {
+        let mut changed = false;
+        for (name, template) in &initial_templates {
+            let mut compiled = template.clone();
+            compile_template_entity(&mut compiled, &compiled_templates, &config.props)?;
+            if compiled_templates
+                .get(name)
+                .is_none_or(|existing| existing.sql_code != compiled.sql_code)
+            {
+                compiled_templates.insert(name.clone(), compiled);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    for (_, entity) in entities.iter_mut() {
+        if let Entity::Template(t) = entity {
+            if let Some(compiled) = compiled_templates.get(&t.name) {
+                *t = compiled.clone();
+            }
+        }
+    }
 
     for (_, entity) in entities.iter_mut() {
         match entity {
-            Entity::Transformation(t) => compile_transformation(t, &templates, &config.props)?,
-            Entity::Operation(o) => compile_operation(o, &templates, &config.props)?,
+            Entity::Transformation(t) => compile_transformation(t, &compiled_templates, &config.props)?,
+            Entity::Operation(o) => compile_operation(o, &compiled_templates, &config.props)?,
             Entity::Test(t) => compile_test(t, &config.props)?,
-            Entity::Template(t) => compile_template_entity(t, &templates, &config.props)?,
-            Entity::Config(_) | Entity::Model(_) => {}
+            Entity::Config(_) | Entity::Model(_) | Entity::Template(_) => {}
         }
     }
 
@@ -95,14 +121,33 @@ fn compile_template_entity(
     let default_props = template.default_props.clone();
 
     template.sql_code = if let Some(usage) = nested {
-        compile_sql(
-            &inner_sql,
-            Some(&usage),
-            default_props.as_ref(),
-            templates,
+        let outer = templates.get(&usage.name).ok_or_else(|| ParseError::TemplateNotFound {
+            template: usage.name.clone(),
+            entity: entity_name.clone(),
+        })?;
+        let body_sql = resolve_template_body(outer, templates, config_props, &entity_name)?;
+        let mut props = config_props.clone();
+        merge_props(
+            &mut props,
+            outer.default_props.as_ref(),
             config_props,
             &entity_name,
-        )?
+        )?;
+        merge_props(&mut props, default_props.as_ref(), config_props, &entity_name)?;
+        let render_ctx = props.clone();
+        merge_props(&mut props, usage.props.as_ref(), &render_ctx, &entity_name)?;
+        let deferred_inner = {
+            let mut inner_props = props.clone();
+            merge_props(
+                &mut inner_props,
+                default_props.as_ref(),
+                config_props,
+                &entity_name,
+            )?;
+            render_template_definition(&inner_sql, &inner_props, &entity_name)?
+        };
+        props.insert(TEMPLATE_CALLER_PROP.to_string(), deferred_inner);
+        render_compile_checked(&body_sql, &props, &entity_name, &[])?
     } else {
         let mut props = config_props.clone();
         merge_props(&mut props, default_props.as_ref(), config_props, &entity_name)?;
@@ -267,6 +312,81 @@ mod tests {
 
     fn fixture_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../specs/data-specs")
+    }
+
+    #[test]
+    fn compile_preserves_caller_props_when_template_nests_template() {
+        let mut entities = vec![
+            (
+                PathBuf::from("dedup.md"),
+                Entity::Template(Template {
+                    name: "dedup".into(),
+                    description: None,
+                    sql_code: "WITH q AS (\n    {{props__code}}\n)\nSELECT DISTINCT ON ({{props__partition_by}}) *\nFROM q\nORDER BY {{props__partition_by}}, {{props__order_by}}".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    default_props: Some(HashMap::from([
+                        ("partition_by".into(), "".into()),
+                        ("order_by".into(), "1".into()),
+                    ])),
+                    template: None,
+                }),
+            ),
+            (
+                PathBuf::from("wrapper.md"),
+                Entity::Template(Template {
+                    name: "wrapper".into(),
+                    description: None,
+                    sql_code: "SELECT {{props__start_block}} AS id\nUNION ALL\n{{props__code}}".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    default_props: None,
+                    template: Some(TemplateUsage {
+                        name: "dedup".into(),
+                        props: Some(HashMap::from([
+                            ("partition_by".into(), "id".into()),
+                            ("order_by".into(), "1".into()),
+                        ])),
+                    }),
+                }),
+            ),
+            (
+                PathBuf::from("model.md"),
+                Entity::Transformation(Transformation {
+                    name: "model__default_transformation".into(),
+                    sql_code: "SELECT 99 AS id".into(),
+                    model: "model".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    template: Some(TemplateUsage {
+                        name: "wrapper".into(),
+                        props: Some(HashMap::from([("start_block".into(), "123".into())])),
+                    }),
+                    columns: None,
+                    tests: None,
+                    pre_runs: None,
+                    post_runs: None,
+                    init_runs: None,
+                }),
+            ),
+        ];
+
+        compile_entities(&mut entities, &Config::default()).unwrap();
+
+        let Entity::Template(wrapper) = &entities[1].1 else {
+            panic!("expected wrapper template");
+        };
+        assert!(wrapper.sql_code.contains("{{props__start_block}}"));
+        assert!(wrapper.sql_code.contains("{{props__code}}"));
+        assert!(wrapper.sql_code.contains("DISTINCT ON (id)"));
+
+        let Entity::Transformation(t) = &entities[2].1 else {
+            panic!("expected transformation");
+        };
+        assert_eq!(
+            t.sql_code,
+            "WITH q AS (\n    SELECT 123 AS id\nUNION ALL\nSELECT 99 AS id\n)\nSELECT DISTINCT ON (id) *\nFROM q\nORDER BY id, 1"
+        );
     }
 
     #[test]

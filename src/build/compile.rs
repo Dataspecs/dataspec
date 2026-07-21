@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::context::render_compile_deferred;
+use crate::context::{render_compile_deferred, render_compile_with_model, ModelContext};
 use crate::entities::{
-    Config, Entity, Operation, OperationUsage, Template, TemplateUsage, Test, Transformation,
+    Config, Entity, Model, Operation, OperationUsage, Template, TemplateUsage, Test,
+    Transformation,
 };
 use crate::error::{ParseError, Result};
 use crate::sql::get_dependent_tables;
@@ -38,16 +39,81 @@ pub fn compile_entities(entities: &mut [(std::path::PathBuf, Entity)], config: &
         }
     }
 
+    let hook_operations = index_hook_operations(entities);
+    let models = index_models(entities);
+
+    for (_, entity) in entities.iter_mut() {
+        if let Entity::Operation(o) = entity {
+            compile_operation(o, &compiled_templates, &config.props, &hook_operations)?;
+        }
+    }
+
+    let operations = index_operations(entities);
+
     for (_, entity) in entities.iter_mut() {
         match entity {
-            Entity::Transformation(t) => compile_transformation(t, &compiled_templates, &config.props)?,
-            Entity::Operation(o) => compile_operation(o, &compiled_templates, &config.props)?,
+            Entity::Transformation(t) => {
+                let model = models.get(&t.model).ok_or_else(|| ParseError::ModelNotFound {
+                    model: t.model.clone(),
+                    entity: t.name.clone(),
+                })?;
+                compile_transformation(
+                    t,
+                    &compiled_templates,
+                    &config.props,
+                    model,
+                    &operations,
+                )?;
+            }
             Entity::Test(t) => compile_test(t, &config.props)?,
-            Entity::Config(_) | Entity::Model(_) | Entity::Template(_) => {}
+            Entity::Config(_) | Entity::Model(_) | Entity::Template(_) | Entity::Operation(_) => {}
         }
     }
 
     Ok(())
+}
+
+fn index_hook_operations(entities: &[(std::path::PathBuf, Entity)]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for (_, entity) in entities {
+        if let Entity::Transformation(t) = entity {
+            collect_hook_operation_names(t.init_runs.as_ref(), &mut names);
+            collect_hook_operation_names(t.pre_runs.as_ref(), &mut names);
+            collect_hook_operation_names(t.post_runs.as_ref(), &mut names);
+        }
+    }
+    names
+}
+
+fn collect_hook_operation_names(
+    usages: Option<&Vec<OperationUsage>>,
+    names: &mut HashSet<String>,
+) {
+    if let Some(usages) = usages {
+        for usage in usages {
+            names.insert(usage.name.clone());
+        }
+    }
+}
+
+fn index_models(entities: &[(std::path::PathBuf, Entity)]) -> HashMap<String, Model> {
+    entities
+        .iter()
+        .filter_map(|(_, entity)| match entity {
+            Entity::Model(model) => Some((model.name.clone(), model.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+fn index_operations(entities: &[(std::path::PathBuf, Entity)]) -> HashMap<String, Operation> {
+    entities
+        .iter()
+        .filter_map(|(_, entity)| match entity {
+            Entity::Operation(operation) => Some((operation.name.clone(), operation.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 fn index_templates(entities: &[(std::path::PathBuf, Entity)]) -> HashMap<String, Template> {
@@ -64,6 +130,8 @@ fn compile_transformation(
     transformation: &mut Transformation,
     templates: &HashMap<String, Template>,
     config_props: &HashMap<String, String>,
+    model: &Model,
+    operations: &HashMap<String, Operation>,
 ) -> Result<()> {
     let entity_name = transformation.name.clone();
     transformation.sql_code = compile_sql(
@@ -73,12 +141,32 @@ fn compile_transformation(
         templates,
         config_props,
         &entity_name,
+        false,
     )?;
     transformation.template = None;
     transformation.dependent_tables = get_dependent_tables(&transformation.sql_code);
-    compile_operation_usages(&mut transformation.pre_runs, config_props, &entity_name)?;
-    compile_operation_usages(&mut transformation.post_runs, config_props, &entity_name)?;
-    compile_operation_usages(&mut transformation.init_runs, config_props, &entity_name)?;
+    let model_ctx = ModelContext::from_transformation(model, transformation);
+    compile_operation_usages(
+        &mut transformation.pre_runs,
+        &model_ctx,
+        operations,
+        config_props,
+        &entity_name,
+    )?;
+    compile_operation_usages(
+        &mut transformation.post_runs,
+        &model_ctx,
+        operations,
+        config_props,
+        &entity_name,
+    )?;
+    compile_operation_usages(
+        &mut transformation.init_runs,
+        &model_ctx,
+        operations,
+        config_props,
+        &entity_name,
+    )?;
     Ok(())
 }
 
@@ -86,8 +174,10 @@ fn compile_operation(
     operation: &mut Operation,
     templates: &HashMap<String, Template>,
     config_props: &HashMap<String, String>,
+    hook_operations: &HashSet<String>,
 ) -> Result<()> {
     let entity_name = operation.name.clone();
+    let preserve_props = hook_operations.contains(&operation.name);
     operation.sql_code = compile_sql(
         &operation.sql_code,
         operation.template.as_ref(),
@@ -95,6 +185,7 @@ fn compile_operation(
         templates,
         config_props,
         &entity_name,
+        preserve_props,
     )?;
     operation.template = None;
     operation.dependent_tables = get_dependent_tables(&operation.sql_code);
@@ -104,8 +195,8 @@ fn compile_operation(
 fn compile_test(test: &mut Test, config_props: &HashMap<String, String>) -> Result<()> {
     let entity_name = test.name.clone();
     let mut props = config_props.clone();
-    merge_props(&mut props, test.default_props.as_ref(), config_props, &entity_name)?;
-    test.sql_code = render_compile_checked(&test.sql_code, &props, &entity_name, &[])?;
+    merge_props(&mut props, test.default_props.as_ref(), config_props, &entity_name, false)?;
+    test.sql_code = render_compile_checked(&test.sql_code, &props, &entity_name, &[], false)?;
     test.dependent_tables = get_dependent_tables(&test.sql_code);
     Ok(())
 }
@@ -125,17 +216,18 @@ fn compile_template_entity(
             template: usage.name.clone(),
             entity: entity_name.clone(),
         })?;
-        let body_sql = resolve_template_body(outer, templates, config_props, &entity_name)?;
+        let body_sql = resolve_template_body(outer, templates, config_props, &entity_name, false)?;
         let mut props = config_props.clone();
         merge_props(
             &mut props,
             outer.default_props.as_ref(),
             config_props,
             &entity_name,
+            false,
         )?;
-        merge_props(&mut props, default_props.as_ref(), config_props, &entity_name)?;
+        merge_props(&mut props, default_props.as_ref(), config_props, &entity_name, false)?;
         let render_ctx = props.clone();
-        merge_props(&mut props, usage.props.as_ref(), &render_ctx, &entity_name)?;
+        merge_props(&mut props, usage.props.as_ref(), &render_ctx, &entity_name, false)?;
         let deferred_inner = {
             let mut inner_props = props.clone();
             merge_props(
@@ -143,14 +235,15 @@ fn compile_template_entity(
                 default_props.as_ref(),
                 config_props,
                 &entity_name,
+                false,
             )?;
             render_template_definition(&inner_sql, &inner_props, &entity_name)?
         };
         props.insert(TEMPLATE_CALLER_PROP.to_string(), deferred_inner);
-        render_compile_checked(&body_sql, &props, &entity_name, &[])?
+        render_compile_checked(&body_sql, &props, &entity_name, &[], false)?
     } else {
         let mut props = config_props.clone();
-        merge_props(&mut props, default_props.as_ref(), config_props, &entity_name)?;
+        merge_props(&mut props, default_props.as_ref(), config_props, &entity_name, false)?;
         render_template_definition(&inner_sql, &props, &entity_name)?
     };
     template.template = None;
@@ -164,31 +257,50 @@ fn compile_sql(
     templates: &HashMap<String, Template>,
     config_props: &HashMap<String, String>,
     entity_name: &str,
+    preserve_props: bool,
 ) -> Result<String> {
     if let Some(usage) = template_usage {
         let template = templates.get(&usage.name).ok_or_else(|| ParseError::TemplateNotFound {
             template: usage.name.clone(),
             entity: entity_name.to_string(),
         })?;
-        let body_sql = resolve_template_body(template, templates, config_props, entity_name)?;
+        let body_sql = resolve_template_body(
+            template,
+            templates,
+            config_props,
+            entity_name,
+            preserve_props,
+        )?;
         let mut props = config_props.clone();
         merge_props(
             &mut props,
             template.default_props.as_ref(),
             config_props,
             entity_name,
+            preserve_props,
         )?;
-        merge_props(&mut props, entity_defaults, config_props, entity_name)?;
-        let rendered_inner = render_compile_checked(inner_sql, &props, entity_name, &[])?;
-        // Mention props apply when wrapping with the template body, not when rendering inner SQL.
+        merge_props(&mut props, entity_defaults, config_props, entity_name, preserve_props)?;
+        let rendered_inner = render_compile_checked(
+            inner_sql,
+            &props,
+            entity_name,
+            &[],
+            preserve_props,
+        )?;
         let render_ctx = props.clone();
-        merge_props(&mut props, usage.props.as_ref(), &render_ctx, entity_name)?;
+        merge_props(
+            &mut props,
+            usage.props.as_ref(),
+            &render_ctx,
+            entity_name,
+            preserve_props,
+        )?;
         props.insert("code".to_string(), rendered_inner);
-        render_compile_checked(&body_sql, &props, entity_name, &[])
+        render_compile_checked(&body_sql, &props, entity_name, &[], preserve_props)
     } else {
         let mut props = config_props.clone();
-        merge_props(&mut props, entity_defaults, config_props, entity_name)?;
-        render_compile_checked(inner_sql, &props, entity_name, &[])
+        merge_props(&mut props, entity_defaults, config_props, entity_name, preserve_props)?;
+        render_compile_checked(inner_sql, &props, entity_name, &[], preserve_props)
     }
 }
 
@@ -197,6 +309,7 @@ fn resolve_template_body(
     templates: &HashMap<String, Template>,
     config_props: &HashMap<String, String>,
     entity_name: &str,
+    preserve_props: bool,
 ) -> Result<String> {
     if let Some(nested) = &template.template {
         compile_sql(
@@ -206,6 +319,7 @@ fn resolve_template_body(
             templates,
             config_props,
             entity_name,
+            preserve_props,
         )
     } else {
         Ok(template.sql_code.clone())
@@ -217,12 +331,13 @@ fn merge_props(
     source: Option<&HashMap<String, String>>,
     render_ctx: &HashMap<String, String>,
     entity_name: &str,
+    preserve_props: bool,
 ) -> Result<()> {
     if let Some(source) = source {
         for (key, value) in source {
             target.insert(
                 key.clone(),
-                render_compile_checked(value, render_ctx, entity_name, &[])?,
+                render_compile_checked(value, render_ctx, entity_name, &[], preserve_props)?,
             );
         }
     }
@@ -231,19 +346,69 @@ fn merge_props(
 
 fn compile_operation_usages(
     usages: &mut Option<Vec<OperationUsage>>,
+    model_ctx: &ModelContext,
+    operations: &HashMap<String, Operation>,
     config_props: &HashMap<String, String>,
     entity_name: &str,
 ) -> Result<()> {
     if let Some(usages) = usages {
         for usage in usages.iter_mut() {
-            if let Some(props) = usage.props.as_mut() {
-                for value in props.values_mut() {
-                    *value = render_compile_checked(value, config_props, entity_name, &[])?;
+            let operation = operations.get(&usage.name).ok_or_else(|| {
+                ParseError::OperationNotFound {
+                    operation: usage.name.clone(),
+                    entity: entity_name.to_string(),
                 }
-            }
+            })?;
+            let mut props = config_props.clone();
+            merge_props_with_model(
+                &mut props,
+                usage.props.as_ref(),
+                config_props,
+                model_ctx,
+                entity_name,
+            )?;
+            usage.sql_code =
+                render_compile_with_model_checked(&operation.sql_code, &props, model_ctx, entity_name)?;
         }
     }
     Ok(())
+}
+
+fn merge_props_with_model(
+    target: &mut HashMap<String, String>,
+    source: Option<&HashMap<String, String>>,
+    render_ctx: &HashMap<String, String>,
+    model_ctx: &ModelContext,
+    entity_name: &str,
+) -> Result<()> {
+    if let Some(source) = source {
+        for (key, value) in source {
+            target.insert(
+                key.clone(),
+                render_compile_with_model_checked(value, render_ctx, model_ctx, entity_name)?,
+            );
+        }
+    }
+    Ok(())
+}
+
+fn render_compile_with_model_checked(
+    template: &str,
+    props: &HashMap<String, String>,
+    model_ctx: &ModelContext,
+    entity_name: &str,
+) -> Result<String> {
+    for key in crate::context::render::extract_mustache_tags(template) {
+        if let Some(prop) = key.strip_prefix("props__") {
+            if !props.contains_key(prop) {
+                return Err(ParseError::PropNotFound {
+                    prop: prop.to_string(),
+                    entity: entity_name.to_string(),
+                });
+            }
+        }
+    }
+    Ok(render_compile_with_model(template, props, model_ctx))
 }
 
 /// `props__code` is filled with the caller's inner SQL when a template is included.
@@ -279,7 +444,7 @@ fn render_template_definition(
 ) -> Result<String> {
     let deferred = template_definition_deferred_props(template, props);
     let deferred_refs: Vec<&str> = deferred.iter().map(String::as_str).collect();
-    render_compile_checked(template, props, entity_name, &deferred_refs)
+    render_compile_checked(template, props, entity_name, &deferred_refs, false)
 }
 
 fn render_compile_checked(
@@ -287,10 +452,32 @@ fn render_compile_checked(
     props: &HashMap<String, String>,
     entity_name: &str,
     deferred: &[&str],
+    preserve_props: bool,
 ) -> Result<String> {
+    let mut deferred_props: Vec<String> = deferred.iter().map(|d| (*d).to_string()).collect();
+    if preserve_props {
+        for key in crate::context::render::extract_mustache_tags(template) {
+            let Some(prop) = key.strip_prefix("props__") else {
+                continue;
+            };
+            if !props.contains_key(prop) && !deferred_props.iter().any(|d| d == prop) {
+                deferred_props.push(prop.to_string());
+            }
+        }
+        let has_resolvable_props = crate::context::render::extract_mustache_tags(template)
+            .iter()
+            .filter_map(|key| key.strip_prefix("props__"))
+            .any(|prop| {
+                props.contains_key(prop) && !deferred_props.iter().any(|d| d == prop)
+            });
+        if !has_resolvable_props {
+            return Ok(template.to_string());
+        }
+    }
+    let deferred_refs: Vec<&str> = deferred_props.iter().map(String::as_str).collect();
     for key in crate::context::render::extract_mustache_tags(template) {
         if let Some(prop) = key.strip_prefix("props__") {
-            if deferred.contains(&prop) {
+            if deferred_refs.contains(&prop) {
                 continue;
             }
             if !props.contains_key(prop) {
@@ -301,12 +488,13 @@ fn render_compile_checked(
             }
         }
     }
-    Ok(render_compile_deferred(template, props, deferred))
+    Ok(render_compile_deferred(template, props, &deferred_refs))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::{Column, Model, Operation, OperationUsage};
     use crate::parser::parse_spec_dir;
     use std::path::PathBuf;
 
@@ -351,6 +539,19 @@ mod tests {
                 }),
             ),
             (
+                PathBuf::from("model_entity.md"),
+                Entity::Model(Model {
+                    name: "model".into(),
+                    description: None,
+                    tags: None,
+                    table_id: None,
+                    managed: false,
+                    disabled: false,
+                    meta: None,
+                    default_transformation: None,
+                }),
+            ),
+            (
                 PathBuf::from("model.md"),
                 Entity::Transformation(Transformation {
                     name: "model__default_transformation".into(),
@@ -380,7 +581,7 @@ mod tests {
         assert!(wrapper.sql_code.contains("{{props__code}}"));
         assert!(wrapper.sql_code.contains("DISTINCT ON (id)"));
 
-        let Entity::Transformation(t) = &entities[2].1 else {
+        let Entity::Transformation(t) = &entities[3].1 else {
             panic!("expected transformation");
         };
         assert_eq!(
@@ -465,24 +666,39 @@ mod tests {
             vec!["{{dummy_model}}".to_string()]
         );
 
-        let mut entities = vec![(
-            PathBuf::from("inline.md"),
-            Entity::Transformation(Transformation {
-                name: "t_with_tables".into(),
-                sql_code: "SELECT a.id FROM alpha a JOIN beta b ON a.id = b.a_id".into(),
-                model: "m".into(),
-                dependent_tables: vec![],
-                used_variables: None,
-                template: None,
-                columns: None,
-                tests: None,
-                pre_runs: None,
-                post_runs: None,
-                init_runs: None,
-            }),
-        )];
+        let mut entities = vec![
+            (
+                PathBuf::from("model.md"),
+                Entity::Model(Model {
+                    name: "m".into(),
+                    description: None,
+                    tags: None,
+                    table_id: None,
+                    managed: false,
+                    disabled: false,
+                    meta: None,
+                    default_transformation: None,
+                }),
+            ),
+            (
+                PathBuf::from("inline.md"),
+                Entity::Transformation(Transformation {
+                    name: "t_with_tables".into(),
+                    sql_code: "SELECT a.id FROM alpha a JOIN beta b ON a.id = b.a_id".into(),
+                    model: "m".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    template: None,
+                    columns: None,
+                    tests: None,
+                    pre_runs: None,
+                    post_runs: None,
+                    init_runs: None,
+                }),
+            ),
+        ];
         compile_entities(&mut entities, &Config::default()).unwrap();
-        let Entity::Transformation(t) = &entities[0].1 else {
+        let Entity::Transformation(t) = &entities[1].1 else {
             panic!("expected transformation");
         };
         assert_eq!(
@@ -494,6 +710,18 @@ mod tests {
     #[test]
     fn compile_applies_template_mention_props_to_wrapper_only() {
         let mut entities = vec![(
+            PathBuf::from("model_entity.md"),
+            Entity::Model(Model {
+                name: "m".into(),
+                description: None,
+                tags: None,
+                table_id: None,
+                managed: false,
+                disabled: false,
+                meta: None,
+                default_transformation: None,
+            }),
+        ), (
             PathBuf::from("inner.md"),
             Entity::Transformation(Transformation {
                 name: "t".into(),
@@ -533,7 +761,7 @@ mod tests {
 
         compile_entities(&mut entities, &config).unwrap();
 
-        let Entity::Transformation(t) = &entities[0].1 else {
+        let Entity::Transformation(t) = &entities[1].1 else {
             panic!("expected transformation");
         };
         assert_eq!(
@@ -610,5 +838,166 @@ mod tests {
         assert!(!sql.contains("props__vata"));
         assert!(sql.contains("{{session_id}}"));
         assert!(sql.contains("{{dummy_model}}"));
+    }
+
+    #[test]
+    fn compile_hook_usage_sql_with_model_context() {
+        let mut entities = vec![
+            (
+                PathBuf::from("model.md"),
+                Entity::Model(Model {
+                    name: "dummy_model".into(),
+                    description: Some("desc".into()),
+                    tags: Some(vec!["core".into()]),
+                    table_id: None,
+                    managed: true,
+                    disabled: false,
+                    meta: None,
+                    default_transformation: None,
+                }),
+            ),
+            (
+                PathBuf::from("op.md"),
+                Entity::Operation(Operation {
+                    name: "audit_op".into(),
+                    description: None,
+                    tags: None,
+                    sql_code: "SELECT * FROM {{model.handler}} WHERE n = {{model.name}}".into(),
+                    template: None,
+                    dependent_tables: vec![],
+                    used_variables: None,
+                }),
+            ),
+            (
+                PathBuf::from("t.md"),
+                Entity::Transformation(Transformation {
+                    name: "dummy_model__default".into(),
+                    sql_code: "SELECT 1".into(),
+                    model: "dummy_model".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    template: None,
+                    columns: Some(vec![Column {
+                        name: "id".into(),
+                        description: None,
+                        data_type: Some("INT64".into()),
+                        labels: None,
+                        tests: None,
+                    }]),
+                    tests: None,
+                    pre_runs: Some(vec![OperationUsage {
+                        name: "audit_op".into(),
+                        props: Some(HashMap::from([("threshold".into(), "10".into())])),
+                        sql_code: String::new(),
+                    }]),
+                    post_runs: None,
+                    init_runs: None,
+                }),
+            ),
+        ];
+
+        let config = Config {
+            props: HashMap::from([("threshold".into(), "99".into())]),
+        };
+
+        compile_entities(&mut entities, &config).unwrap();
+
+        let transformation = match &entities[2].1 {
+            Entity::Transformation(t) => t,
+            _ => panic!("expected transformation"),
+        };
+        let hook = transformation
+            .pre_runs
+            .as_ref()
+            .and_then(|runs| runs.first())
+            .expect("hook usage");
+        assert_eq!(
+            hook.sql_code,
+            "SELECT * FROM {{dummy_model}} WHERE n = dummy_model"
+        );
+        assert!(!hook.sql_code.contains("{{props__"));
+        assert!(!hook.sql_code.contains("{{session_id}}"));
+    }
+
+    #[test]
+    fn compile_hook_with_template_renders_model_handler() {
+        let mut entities = vec![
+            (
+                PathBuf::from("model.md"),
+                Entity::Model(Model {
+                    name: "dummy_model".into(),
+                    description: None,
+                    tags: None,
+                    table_id: None,
+                    managed: false,
+                    disabled: false,
+                    meta: None,
+                    default_transformation: None,
+                }),
+            ),
+            (
+                PathBuf::from("tpl.md"),
+                Entity::Template(Template {
+                    name: "hook_tpl".into(),
+                    description: None,
+                    sql_code: "CREATE TABLE tmp AS SELECT * FROM {{model.handler}} WHERE {{props__code}}".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    default_props: None,
+                    template: None,
+                }),
+            ),
+            (
+                PathBuf::from("op.md"),
+                Entity::Operation(Operation {
+                    name: "audit_op".into(),
+                    description: None,
+                    tags: None,
+                    sql_code: "SELECT 1".into(),
+                    template: Some(TemplateUsage {
+                        name: "hook_tpl".into(),
+                        props: None,
+                    }),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                }),
+            ),
+            (
+                PathBuf::from("t.md"),
+                Entity::Transformation(Transformation {
+                    name: "dummy_model__default".into(),
+                    sql_code: "SELECT 1".into(),
+                    model: "dummy_model".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    template: None,
+                    columns: None,
+                    tests: None,
+                    pre_runs: Some(vec![OperationUsage {
+                        name: "audit_op".into(),
+                        props: None,
+                        sql_code: String::new(),
+                    }]),
+                    post_runs: None,
+                    init_runs: None,
+                }),
+            ),
+        ];
+
+        compile_entities(&mut entities, &Config::default()).unwrap();
+
+        let transformation = match &entities[3].1 {
+            Entity::Transformation(t) => t,
+            _ => panic!("expected transformation"),
+        };
+        let hook = transformation
+            .pre_runs
+            .as_ref()
+            .and_then(|runs| runs.first())
+            .expect("hook usage");
+        assert_eq!(
+            hook.sql_code,
+            "CREATE TABLE tmp AS SELECT * FROM {{dummy_model}} WHERE SELECT 1"
+        );
     }
 }

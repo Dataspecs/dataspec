@@ -223,7 +223,7 @@ Example hooks in a transformation spec:
 - [create_watermark_table](../operations/create_watermark_table)
 ```
 
-Hook operations resolve `{{props__*}}` from the hook's prop table at execution time, falling back to project config props.
+Hook operations use SQL compiled at build time into each hook reference. Template chains are supported: `{{model.*}}` tags in template bodies are preserved during template inlining and resolved when the hook usage is compiled (see [Rendering rules](#rendering-rules)). At execution time only runtime variables (`{{vars__*}}`, `{{session_id}}`, `{{<model_name>}}`) are resolved.
 
 ### Apply
 
@@ -285,6 +285,18 @@ cargo run -- list --names dummy_model --models
 # JSON
 cargo run -- list --models --json
 ```
+
+## Rendering rules
+
+Hook operations compile in two steps: templates and operation code are inlined first (`{{props__*}}` from config resolved; `{{model.*}}` preserved), then each hook usage gets final SQL with model context and hook prop overrides applied. `{{model.handler}}` in a template becomes `{{<model_name>}}` at hook compile and the table ID at runtime.
+
+| Variable | When | Notes |
+|----------|------|-------|
+| `{{props__*}}`, `{{model.*}}` | Hook compile | Baked into hook SQL; works in template chains |
+| `{{model.handler}}` | Hook compile → Runtime | Becomes `{{<model_name>}}`, then table ID |
+| `{{vars__*}}`, `{{session_id}}`, `{{<model_name>}}` | Runtime | CLI / execution context |
+
+See the [dataspec README](https://github.com/Dataspecs/dataspec#rendering-rules) for details and examples.
 
 ## Storage backends
 

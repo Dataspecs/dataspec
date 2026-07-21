@@ -604,12 +604,14 @@ mod tests {
                 OperationUsage {
                     name: "pre_op".into(),
                     props: None,
+                    sql_code: "select pre".into(),
                 },
             ]),
             post_runs: Some(vec![
                 OperationUsage {
                     name: "post_op".into(),
                     props: None,
+                    sql_code: "select post".into(),
                 },
             ]),
             init_runs: None,
@@ -686,6 +688,7 @@ mod tests {
             init_runs: Some(vec![OperationUsage {
                 name: "init_op".into(),
                 props: None,
+                sql_code: "select init".into(),
             }]),
         }));
         let init_op: &'static crate::entities::Operation = Box::leak(Box::new(

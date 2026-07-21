@@ -8,6 +8,8 @@ use crate::entities::execution_plan::{ExecutionStep, ExecutionStepType};
 pub struct OperationUsage {
     pub name: String,
     pub props: Option<HashMap<String, String>>,
+    /// Hook SQL compiled at build time with props and model context.
+    pub sql_code: String,
 }
 
 impl ExecutionStep for OperationUsage {
@@ -16,7 +18,7 @@ impl ExecutionStep for OperationUsage {
     }
 
     fn sql(&self) -> &str {
-        ""
+        &self.sql_code
     }
 
     fn step_type(&self) -> ExecutionStepType {

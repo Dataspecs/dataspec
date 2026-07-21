@@ -243,9 +243,10 @@ fn emit_template_usage(usage: &TemplateUsage) -> String {
 
 fn emit_operation_usage(usage: &OperationUsage) -> String {
     format!(
-        "OperationUsage {{ name: {}, props: {} }}",
+        "OperationUsage {{ name: {}, props: {}, sql_code: {} }}",
         rust_string_expr(&usage.name),
         emit_option_hashmap(&usage.props),
+        rust_string_expr(&usage.sql_code),
     )
 }
 

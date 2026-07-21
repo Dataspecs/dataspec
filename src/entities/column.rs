@@ -21,4 +21,9 @@ impl Column {
     pub fn labels(&self) -> Option<&Vec<String>> {
         self.labels.as_ref()
     }
+
+    /// Column metadata for mustache templates (excludes test references).
+    pub fn to_template_meta(&self) -> crate::context::ColumnTemplateMeta {
+        crate::context::ColumnTemplateMeta::from_column(self)
+    }
 }

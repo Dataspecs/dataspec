@@ -169,7 +169,7 @@ Example hooks in a transformation spec:
 - [create_watermark_table](../operations/create_watermark_table)
 ```
 
-Hook operations resolve `{{props__*}}` from the hook's prop table at execution time, falling back to project config props. Other variables (`{{vars__*}}`, `{{<model_name>}}`, `{{session_id}}`) are resolved at execution time like transformation SQL.
+Hook operations use SQL compiled at build time into each hook reference (`OperationUsage.sql_code`). At execution time only runtime variables are resolved (see [Rendering rules](#rendering-rules)).
 
 ### Apply
 
@@ -287,10 +287,50 @@ Two rendering phases: **compilation** and **execution**.
 
 | Variable | When | Description |
 |----------|------|-------------|
-| `{{props__<key>}}` | Compile / hook execution | Config and template params at compile time; on hook operations, also resolved from hook prop overrides and config at execution time |
+| `{{props__<key>}}` | Compile (hook usage) | Config and template params; hook prop overrides — baked into `OperationUsage.sql_code`. Config props may resolve earlier during template inlining |
+| `{{model.name}}`, `{{model.tags}}`, `{{model.description}}`, `{{model.managed}}`, `{{model.disabled}}`, `{{model.meta}}` | Compile (hook usage) | Model metadata from the transformation's model; preserved through template inlining until hook compile |
+| `{{model.columns}}` | Compile (hook usage) | Column metadata from the transformation (excludes column tests); supports `{{#model.columns}}` sections |
+| `{{model.handler}}` | Compile (hook usage) → Runtime | At hook compile, becomes `{{<model_name>}}`; at runtime, resolves to table ID. Works in template bodies |
 | `{{vars__<key>}}` / `{{var__<key>}}` | Runtime | CLI variables (e.g. `{{var__report_year}}`) |
 | `{{<model_name>}}` | Runtime | Table ID for a model (from catalog or `--mappings`) |
 | `{{session_id}}` | Runtime | UUID with unique session id of this execution |
+
+#### Hook model context
+
+When an operation runs as a hook (Init / Pre / Post on a transformation), a `{{model.*}}` namespace is available. Model context comes from the **transformation that defines the hook** (`Transformation.model` and `Transformation.columns`), not from the operation itself.
+
+**Compile phases for hooks.** Hook SQL is built in two compile steps:
+
+1. **Template / operation inline** — templates and operation code are merged; `{{props__*}}` from config is resolved where available. All `{{model.*}}` tags are **preserved** through this step (including inside nested template chains), so they survive operation template wrapping.
+2. **Hook usage compile** — each hook reference gets its own SQL in `OperationUsage.sql_code`; `{{props__*}}` (config + hook prop overrides) and all `{{model.*}}` fields are resolved here. `{{model.handler}}` becomes `{{<model_name>}}` (e.g. `{{dummy_model}}`).
+
+At **runtime**, only `{{vars__*}}`, `{{session_id}}`, and model table refs (`{{<model_name>}}`, including the tag emitted by `{{model.handler}}`) are resolved.
+
+**Templates.** Hook operations may use templates (including nested template chains). Put `{{model.handler}}`, `{{model.name}}`, `{{#model.columns}}`, etc. in the template body or operation code — model variables work in both. Example with a template:
+
+```sql
+-- template body:     CREATE TABLE tmp AS SELECT * FROM {{model.handler}} WHERE {{props__code}}
+-- operation code:    SELECT 1
+-- after hook compile: CREATE TABLE tmp AS SELECT * FROM {{dummy_model}} WHERE SELECT 1
+-- after runtime:      CREATE TABLE tmp AS SELECT * FROM dataset.dummy_model WHERE SELECT 1
+```
+
+Handler indirection example:
+
+```sql
+-- in operation spec:  SELECT * FROM {{model.handler}}
+-- after hook compile: SELECT * FROM {{dummy_model}}
+-- after runtime:       SELECT * FROM dataset.dummy_model
+```
+
+Column iteration at compile time:
+
+```sql
+-- in operation spec:  {{#model.columns}}`{{name}}` {{data_type}},{{/model.columns}}
+-- after hook compile: `id` INT64, `name` STRING,
+```
+
+`{{model.*}}` is only defined for hook runs. Operations that use model variables should not be run via standalone `apply`.
 
 Variable syntax follows the [mustache](https://lib.rs/crates/mustache) crate: `{{name}}`. Use `{{var__name}}` (or `{{vars__name}}`) for CLI variables and `{{props__name}}` for config/template props.
 </details>

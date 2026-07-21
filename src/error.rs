@@ -34,6 +34,12 @@ pub enum ParseError {
 
     #[error("prop `props__{prop}` not found when compiling `{entity}`")]
     PropNotFound { prop: String, entity: String },
+
+    #[error("model `{model}` not found when compiling `{entity}`")]
+    ModelNotFound { model: String, entity: String },
+
+    #[error("operation `{operation}` not found when compiling `{entity}`")]
+    OperationNotFound { operation: String, entity: String },
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;

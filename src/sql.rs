@@ -123,6 +123,7 @@ fn is_mustache_table_ref(tag: &str) -> bool {
     !tag.starts_with("props__")
         && !tag.starts_with("vars__")
         && !tag.starts_with("var__")
+        && !crate::context::render::is_model_context_tag(tag)
         && tag != "session_id"
 }
 

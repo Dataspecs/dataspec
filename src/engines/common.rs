@@ -1,4 +1,4 @@
-use crate::context::{render_runtime, render_runtime_step, Ctx};
+use crate::context::{render_runtime, Ctx};
 use crate::entities::{ExecutionPlan, ExecutionStepJson, ExecutionStepType};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -130,17 +130,10 @@ pub trait DbEngine {
             };
 
             for steps in all_steps {
-                for (mut step, is_hook_operation, step_props) in steps {
-                    if is_hook_operation {
-                        step.sql = resolve_hook_sql(&step.name, ctx);
-                    }
+                for (step, _is_hook_operation, _step_props) in steps {
                     tracing::info!("Execute {}", step.name);
                     tracing::debug!("Start rendering SQL for step: {}", step.name);
-                    let sql = if is_hook_operation {
-                        render_runtime_step(&step.sql, ctx, step_props.as_ref())
-                    } else {
-                        render_runtime(&step.sql, ctx)
-                    };
+                    let sql = render_runtime(&step.sql, ctx);
                     tracing::debug!("Executing SQL: {sql}");
 
                     match self.execute(&sql).await {
@@ -204,18 +197,6 @@ fn accumulate_statistics(total: &mut ExecutionStatistics, statistics: &Execution
     total.bytes_billed = Some(
         total.bytes_billed.unwrap_or(0) + statistics.bytes_billed.unwrap_or(0),
     );
-}
-
-fn resolve_hook_sql(operation_name: &str, ctx: &Ctx<'_>) -> String {
-    let catalog = ctx
-        .data_catalog
-        .expect("data_catalog must be set before executing hook operations");
-    catalog
-        .operations_by_name
-        .get(operation_name)
-        .unwrap_or_else(|| panic!("Can't find operation {operation_name}"))
-        .sql_code
-        .clone()
 }
 
 #[cfg(test)]

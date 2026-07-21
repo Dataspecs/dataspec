@@ -218,7 +218,7 @@ fn refs_to_names(refs: Vec<RefWithProps>) -> Vec<String> {
 fn refs_to_operation_usages(refs: Vec<RefWithProps>) -> Vec<OperationUsage> {
     refs.into_iter()
         .map(|r| OperationUsage {
-            name: r.link.label,
+            name: test_name_from_ref(&r.link),
             props: {
                 let map = props_to_hashmap(&r.props);
                 if map.is_empty() {
@@ -227,6 +227,7 @@ fn refs_to_operation_usages(refs: Vec<RefWithProps>) -> Vec<OperationUsage> {
                     Some(map)
                 }
             },
+            sql_code: String::new(),
         })
         .collect()
 }

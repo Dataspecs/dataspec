@@ -14,6 +14,8 @@ pub struct ModelContext {
     pub disabled: bool,
     pub meta: Option<HashMap<String, String>>,
     pub columns: Vec<ColumnTemplateMeta>,
+    /// Set when a test is assigned on a column; absent for transformation-level tests.
+    pub tested_column: Option<ColumnTemplateMeta>,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +54,12 @@ impl ModelContext {
             disabled: model.disabled,
             meta: model.meta.clone(),
             columns,
+            tested_column: None,
         }
+    }
+
+    pub fn with_tested_column(mut self, column: &Column) -> Self {
+        self.tested_column = Some(ColumnTemplateMeta::from_column(column));
+        self
     }
 }

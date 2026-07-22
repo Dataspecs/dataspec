@@ -6,7 +6,7 @@ pub struct Column {
     pub description: Option<String>,
     pub data_type: Option<String>,
     pub labels: Option<Vec<String>>,
-    pub tests: Option<Vec<String>>,
+    pub tests: Option<Vec<crate::entities::TestUsage>>,
 }
 
 impl Column {

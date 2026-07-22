@@ -833,6 +833,8 @@ mod tests {
 
     #[test]
     fn get_tests_for_model_includes_column_tests() {
+        use crate::entities::TestUsage;
+
         let mut catalog = DataCatalog::new();
         let model: &'static Model = Box::leak(Box::new(Model {
             name: "m".into(),
@@ -856,33 +858,23 @@ mod tests {
                 description: None,
                 data_type: None,
                 labels: None,
-                tests: Some(vec!["col_test".into()]),
+                tests: Some(vec![TestUsage {
+                    name: "col_test".into(),
+                    props: None,
+                    sql_code: "select 2".into(),
+                }]),
             }]),
-            tests: Some(vec!["model_test".into()]),
+            tests: Some(vec![TestUsage {
+                name: "model_test".into(),
+                props: None,
+                sql_code: "select 1".into(),
+            }]),
             pre_runs: None,
             post_runs: None,
             init_runs: None,
         }));
-        let model_test: &'static Test = Box::leak(Box::new(Test {
-            name: "model_test".into(),
-            description: None,
-            sql_code: "select 1".into(),
-            dependent_tables: vec![],
-            used_variables: None,
-            default_props: None,
-        }));
-        let col_test: &'static Test = Box::leak(Box::new(Test {
-            name: "col_test".into(),
-            description: None,
-            sql_code: "select 2".into(),
-            dependent_tables: vec![],
-            used_variables: None,
-            default_props: None,
-        }));
         catalog.register_model(model);
         catalog.register_transformation(transformation);
-        catalog.register_test(model_test);
-        catalog.register_test(col_test);
 
         let steps = catalog.get_tests_for_model("m", None).unwrap();
         let names: Vec<&str> = steps.iter().map(|s| s.name()).collect();

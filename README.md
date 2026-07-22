@@ -287,10 +287,11 @@ Two rendering phases: **compilation** and **execution**.
 
 | Variable | When | Description |
 |----------|------|-------------|
-| `{{props__<key>}}` | Compile (hook usage) | Config and template params; hook prop overrides — baked into `OperationUsage.sql_code`. Config props may resolve earlier during template inlining |
-| `{{model.name}}`, `{{model.tags}}`, `{{model.description}}`, `{{model.managed}}`, `{{model.disabled}}`, `{{model.meta}}` | Compile (hook usage) | Model metadata from the transformation's model; preserved through template inlining until hook compile |
-| `{{model.columns}}` | Compile (hook usage) | Column metadata from the transformation (excludes column tests); supports `{{#model.columns}}` sections |
-| `{{model.handler}}` | Compile (hook usage) → Runtime | At hook compile, becomes `{{<model_name>}}`; at runtime, resolves to table ID. Works in template bodies |
+| `{{props__<key>}}` | Compile (hook / test usage) | Config and template params; hook/test prop overrides — baked into `OperationUsage.sql_code` / `TestUsage.sql_code`. Config props may resolve earlier during template inlining |
+| `{{model.name}}`, `{{model.tags}}`, `{{model.description}}`, `{{model.managed}}`, `{{model.disabled}}`, `{{model.meta}}` | Compile (hook / test usage) | Model metadata from the transformation's model; preserved through template inlining until usage compile |
+| `{{model.columns}}` | Compile (hook / test usage) | Column metadata from the transformation (excludes column tests); supports `{{#model.columns}}` sections |
+| `{{model.tested_column}}` | Compile (column test usage) | Column metadata for the column the test is assigned to; absent for transformation-level tests. Fields: `name`, `description`, `data_type`, `labels` |
+| `{{model.handler}}` | Compile (hook / test usage) → Runtime | At usage compile, becomes `{{<model_name>}}`; at runtime, resolves to table ID. Works in template bodies |
 | `{{vars__<key>}}` / `{{var__<key>}}` | Runtime | CLI variables (e.g. `{{var__report_year}}`) |
 | `{{<model_name>}}` | Runtime | Table ID for a model (from catalog or `--mappings`) |
 | `{{session_id}}` | Runtime | UUID with unique session id of this execution |
@@ -330,7 +331,26 @@ Column iteration at compile time:
 -- after hook compile: `id` INT64, `name` STRING,
 ```
 
-`{{model.*}}` is only defined for hook runs. Operations that use model variables should not be run via standalone `apply`.
+`{{model.*}}` is only defined for hook runs and transformation/column test runs. Operations that use model variables should not be run via standalone `apply`.
+
+#### Test model context
+
+When a test runs from a transformation (model-level **Tests** section or column **Tests** section), the same `{{model.*}}` namespace is available at compile time. Each test reference gets its own SQL in `TestUsage.sql_code`, built in two compile steps (same as hooks):
+
+1. **Global test compile** — `{{props__*}}` from config and test default props are resolved; `{{model.*}}` tags are preserved when the test is referenced from a transformation.
+2. **Test usage compile** — props (config + usage overrides + test default props) and all `{{model.*}}` fields are resolved per reference.
+
+For tests assigned on a **column**, `{{model.tested_column}}` is set to that column's metadata (`name`, `description`, `data_type`, `labels`). It is absent for transformation-level tests.
+
+Example column test SQL:
+
+```sql
+-- in test spec:  SELECT COUNT(*) FROM {{model.handler}} WHERE {{model.tested_column.name}} IS NULL
+-- after compile:  SELECT COUNT(*) FROM {{dummy_model}} WHERE amount IS NULL
+-- after runtime:  SELECT COUNT(*) FROM dataset.dummy_model WHERE amount IS NULL
+```
+
+`{{model.*}}` is only defined for test runs from a transformation. Tests invoked via standalone `test --names my_test` use the global test SQL without model context.
 
 Variable syntax follows the [mustache](https://lib.rs/crates/mustache) crate: `{{name}}`. Use `{{var__name}}` (or `{{vars__name}}`) for CLI variables and `{{props__name}}` for config/template props.
 </details>

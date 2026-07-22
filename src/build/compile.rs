@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::context::{render_compile_deferred, render_compile_with_model, ModelContext};
 use crate::entities::{
-    Config, Entity, Model, Operation, OperationUsage, Template, TemplateUsage, Test,
+    Config, Entity, Model, Operation, OperationUsage, Template, TemplateUsage, Test, TestUsage,
     Transformation,
 };
 use crate::error::{ParseError, Result};
@@ -40,6 +40,7 @@ pub fn compile_entities(entities: &mut [(std::path::PathBuf, Entity)], config: &
     }
 
     let hook_operations = index_hook_operations(entities);
+    let hook_tests = index_hook_tests(entities);
     let models = index_models(entities);
 
     for (_, entity) in entities.iter_mut() {
@@ -48,7 +49,14 @@ pub fn compile_entities(entities: &mut [(std::path::PathBuf, Entity)], config: &
         }
     }
 
+    for (_, entity) in entities.iter_mut() {
+        if let Entity::Test(t) = entity {
+            compile_test(t, &config.props, &hook_tests)?;
+        }
+    }
+
     let operations = index_operations(entities);
+    let tests = index_tests(entities);
 
     for (_, entity) in entities.iter_mut() {
         match entity {
@@ -63,10 +71,14 @@ pub fn compile_entities(entities: &mut [(std::path::PathBuf, Entity)], config: &
                     &config.props,
                     model,
                     &operations,
+                    &tests,
                 )?;
             }
-            Entity::Test(t) => compile_test(t, &config.props)?,
-            Entity::Config(_) | Entity::Model(_) | Entity::Template(_) | Entity::Operation(_) => {}
+            Entity::Test(_)
+            | Entity::Config(_)
+            | Entity::Model(_)
+            | Entity::Template(_)
+            | Entity::Operation(_) => {}
         }
     }
 
@@ -94,6 +106,39 @@ fn collect_hook_operation_names(
             names.insert(usage.name.clone());
         }
     }
+}
+
+fn index_hook_tests(entities: &[(std::path::PathBuf, Entity)]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for (_, entity) in entities {
+        if let Entity::Transformation(t) = entity {
+            collect_hook_test_names(t.tests.as_ref(), &mut names);
+            if let Some(columns) = &t.columns {
+                for column in columns {
+                    collect_hook_test_names(column.tests.as_ref(), &mut names);
+                }
+            }
+        }
+    }
+    names
+}
+
+fn collect_hook_test_names(usages: Option<&Vec<TestUsage>>, names: &mut HashSet<String>) {
+    if let Some(usages) = usages {
+        for usage in usages {
+            names.insert(usage.name.clone());
+        }
+    }
+}
+
+fn index_tests(entities: &[(std::path::PathBuf, Entity)]) -> HashMap<String, Test> {
+    entities
+        .iter()
+        .filter_map(|(_, entity)| match entity {
+            Entity::Test(test) => Some((test.name.clone(), test.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 fn index_models(entities: &[(std::path::PathBuf, Entity)]) -> HashMap<String, Model> {
@@ -132,6 +177,7 @@ fn compile_transformation(
     config_props: &HashMap<String, String>,
     model: &Model,
     operations: &HashMap<String, Operation>,
+    tests: &HashMap<String, Test>,
 ) -> Result<()> {
     let entity_name = transformation.name.clone();
     transformation.sql_code = compile_sql(
@@ -167,6 +213,26 @@ fn compile_transformation(
         config_props,
         &entity_name,
     )?;
+    let base_model_ctx = model_ctx.clone();
+    compile_test_usages(
+        &mut transformation.tests,
+        &base_model_ctx,
+        tests,
+        config_props,
+        &entity_name,
+    )?;
+    if let Some(columns) = transformation.columns.as_mut() {
+        for column in columns.iter_mut() {
+            let column_ctx = base_model_ctx.clone().with_tested_column(column);
+            compile_test_usages(
+                &mut column.tests,
+                &column_ctx,
+                tests,
+                config_props,
+                &entity_name,
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -192,11 +258,16 @@ fn compile_operation(
     Ok(())
 }
 
-fn compile_test(test: &mut Test, config_props: &HashMap<String, String>) -> Result<()> {
+fn compile_test(
+    test: &mut Test,
+    config_props: &HashMap<String, String>,
+    hook_tests: &HashSet<String>,
+) -> Result<()> {
     let entity_name = test.name.clone();
+    let preserve_props = hook_tests.contains(&test.name);
     let mut props = config_props.clone();
-    merge_props(&mut props, test.default_props.as_ref(), config_props, &entity_name, false)?;
-    test.sql_code = render_compile_checked(&test.sql_code, &props, &entity_name, &[], false)?;
+    merge_props(&mut props, test.default_props.as_ref(), config_props, &entity_name, preserve_props)?;
+    test.sql_code = render_compile_checked(&test.sql_code, &props, &entity_name, &[], preserve_props)?;
     test.dependent_tables = get_dependent_tables(&test.sql_code);
     Ok(())
 }
@@ -374,6 +445,41 @@ fn compile_operation_usages(
     Ok(())
 }
 
+fn compile_test_usages(
+    usages: &mut Option<Vec<TestUsage>>,
+    model_ctx: &ModelContext,
+    tests: &HashMap<String, Test>,
+    config_props: &HashMap<String, String>,
+    entity_name: &str,
+) -> Result<()> {
+    if let Some(usages) = usages {
+        for usage in usages.iter_mut() {
+            let test = tests.get(&usage.name).ok_or_else(|| ParseError::TestNotFound {
+                test: usage.name.clone(),
+                entity: entity_name.to_string(),
+            })?;
+            let mut props = config_props.clone();
+            merge_props_with_model(
+                &mut props,
+                usage.props.as_ref(),
+                config_props,
+                model_ctx,
+                entity_name,
+            )?;
+            merge_props_with_model(
+                &mut props,
+                test.default_props.as_ref(),
+                config_props,
+                model_ctx,
+                entity_name,
+            )?;
+            usage.sql_code =
+                render_compile_with_model_checked(&test.sql_code, &props, model_ctx, entity_name)?;
+        }
+    }
+    Ok(())
+}
+
 fn merge_props_with_model(
     target: &mut HashMap<String, String>,
     source: Option<&HashMap<String, String>>,
@@ -494,7 +600,7 @@ fn render_compile_checked(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{Column, Model, Operation, OperationUsage};
+    use crate::entities::{Column, Model, Operation, OperationUsage, Test, TestUsage};
     use crate::parser::parse_spec_dir;
     use std::path::PathBuf;
 
@@ -998,6 +1104,80 @@ mod tests {
         assert_eq!(
             hook.sql_code,
             "CREATE TABLE tmp AS SELECT * FROM {{dummy_model}} WHERE SELECT 1"
+        );
+    }
+
+    #[test]
+    fn compile_column_test_usage_sets_tested_column_in_sql() {
+        let mut entities = vec![
+            (
+                PathBuf::from("model.md"),
+                Entity::Model(Model {
+                    name: "dummy_model".into(),
+                    description: None,
+                    tags: None,
+                    table_id: None,
+                    managed: false,
+                    disabled: false,
+                    meta: None,
+                    default_transformation: None,
+                }),
+            ),
+            (
+                PathBuf::from("test.md"),
+                Entity::Test(Test {
+                    name: "not_null_test".into(),
+                    description: None,
+                    sql_code: "SELECT COUNT(*) FROM {{model.handler}} WHERE {{model.tested_column.name}} IS NULL".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    default_props: None,
+                }),
+            ),
+            (
+                PathBuf::from("t.md"),
+                Entity::Transformation(Transformation {
+                    name: "dummy_model__default".into(),
+                    sql_code: "SELECT 1".into(),
+                    model: "dummy_model".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    template: None,
+                    columns: Some(vec![Column {
+                        name: "amount".into(),
+                        description: None,
+                        data_type: Some("NUMERIC".into()),
+                        labels: None,
+                        tests: Some(vec![TestUsage {
+                            name: "not_null_test".into(),
+                            props: None,
+                            sql_code: String::new(),
+                        }]),
+                    }]),
+                    tests: None,
+                    pre_runs: None,
+                    post_runs: None,
+                    init_runs: None,
+                }),
+            ),
+        ];
+
+        compile_entities(&mut entities, &Config::default()).unwrap();
+
+        let transformation = match &entities[2].1 {
+            Entity::Transformation(t) => t,
+            _ => panic!("expected transformation"),
+        };
+        let column_test = transformation
+            .columns
+            .as_ref()
+            .and_then(|cols| cols.first())
+            .and_then(|col| col.tests.as_ref())
+            .and_then(|tests| tests.first())
+            .expect("column test usage");
+        assert_eq!(
+            column_test.sql_code,
+            "SELECT COUNT(*) FROM {{dummy_model}} WHERE amount IS NULL"
         );
     }
 }

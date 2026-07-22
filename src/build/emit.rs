@@ -3,7 +3,7 @@ use std::fmt::Write;
 
 use crate::entities::{
     Column, Config, Entity, Model, Operation, OperationUsage, Template, TemplateUsage, Test,
-    Transformation,
+    TestUsage, Transformation,
 };
 use crate::error::Result;
 
@@ -44,7 +44,7 @@ pub fn emit_catalog_rs(entities: &[(std::path::PathBuf, Entity)], config: &Confi
     );
     writeln!(
         out,
-        "use dataspec::{{Column, Config, DataCatalog, Model, Operation, OperationUsage, Template, Test, Transformation}};"
+        "use dataspec::{{Column, Config, DataCatalog, Model, Operation, OperationUsage, Template, Test, TestUsage, Transformation}};"
     )
     .unwrap();
     writeln!(out, "use std::collections::HashMap;").unwrap();
@@ -177,7 +177,7 @@ fn emit_transformation_literal(t: &Transformation) -> String {
         emit_option_vec_string(&t.used_variables),
         emit_option_template_usage(&t.template),
         emit_option_columns(&t.columns),
-        emit_option_vec_string(&t.tests),
+        emit_option_test_usages(&t.tests),
         emit_option_operation_usages(&t.pre_runs),
         emit_option_operation_usages(&t.post_runs),
         emit_option_operation_usages(&t.init_runs),
@@ -229,7 +229,7 @@ fn emit_column(col: &Column) -> String {
         emit_option_string(&col.description),
         emit_option_string(&col.data_type),
         emit_option_vec_string(&col.labels),
-        emit_option_vec_string(&col.tests),
+        emit_option_test_usages(&col.tests),
     )
 }
 
@@ -238,6 +238,15 @@ fn emit_template_usage(usage: &TemplateUsage) -> String {
         "TemplateUsage {{ name: {}, props: {} }}",
         rust_string_expr(&usage.name),
         emit_option_hashmap(&usage.props),
+    )
+}
+
+fn emit_test_usage(usage: &TestUsage) -> String {
+    format!(
+        "TestUsage {{ name: {}, props: {}, sql_code: {} }}",
+        rust_string_expr(&usage.name),
+        emit_option_hashmap(&usage.props),
+        rust_string_expr(&usage.sql_code),
     )
 }
 
@@ -263,6 +272,20 @@ fn emit_option_columns(cols: &Option<Vec<Column>>) -> String {
 fn emit_option_template_usage(value: &Option<TemplateUsage>) -> String {
     match value {
         Some(usage) => format!("Some({})", emit_template_usage(usage)),
+        None => "None".to_string(),
+    }
+}
+
+fn emit_option_test_usages(value: &Option<Vec<TestUsage>>) -> String {
+    match value {
+        Some(usages) => format!(
+            "Some(vec![{}])",
+            usages
+                .iter()
+                .map(emit_test_usage)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         None => "None".to_string(),
     }
 }

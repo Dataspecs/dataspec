@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::entities::{Column, OperationUsage, TemplateUsage};
+use crate::entities::{Column, OperationUsage, TemplateUsage, TestUsage};
 use crate::parser::ast::Section;
 
 struct LinkRef {
@@ -26,7 +26,7 @@ struct RefWithProps {
 #[derive(Default)]
 pub struct ParsedTransformationBody {
     pub columns: Option<Vec<Column>>,
-    pub tests: Option<Vec<String>>,
+    pub tests: Option<Vec<TestUsage>>,
     pub template: Option<TemplateUsage>,
     pub pre_runs: Option<Vec<OperationUsage>>,
     pub post_runs: Option<Vec<OperationUsage>>,
@@ -211,8 +211,21 @@ fn test_name_from_ref(link: &LinkRef) -> String {
         .unwrap_or_else(|| link.label.clone())
 }
 
-fn refs_to_names(refs: Vec<RefWithProps>) -> Vec<String> {
-    refs.into_iter().map(|r| test_name_from_ref(&r.link)).collect()
+fn refs_to_test_usages(refs: Vec<RefWithProps>) -> Vec<TestUsage> {
+    refs.into_iter()
+        .map(|r| TestUsage {
+            name: test_name_from_ref(&r.link),
+            props: {
+                let map = props_to_hashmap(&r.props);
+                if map.is_empty() {
+                    None
+                } else {
+                    Some(map)
+                }
+            },
+            sql_code: String::new(),
+        })
+        .collect()
 }
 
 fn refs_to_operation_usages(refs: Vec<RefWithProps>) -> Vec<OperationUsage> {
@@ -253,7 +266,7 @@ pub fn parse_columns(section: &Section) -> Vec<Column> {
                 .map(|s| s.body_trimmed().to_string());
             let tests = col_section
                 .child("Tests")
-                .map(|s| refs_to_names(parse_ref_list(s.body_trimmed())));
+                .map(|s| refs_to_test_usages(parse_ref_list(s.body_trimmed())));
             let description = col_section.body_trimmed();
             let description = if description.is_empty() {
                 None
@@ -278,7 +291,7 @@ pub fn parse_transformation_body(root: &Section) -> ParsedTransformationBody {
         .filter(|cols| !cols.is_empty());
     let tests = root
         .child("Tests")
-        .map(|s| refs_to_names(parse_ref_list(s.body_trimmed())));
+        .map(|s| refs_to_test_usages(parse_ref_list(s.body_trimmed())));
     let pre_runs = root
         .child("Hooks")
         .and_then(|h| h.child("Pre"))
@@ -349,10 +362,10 @@ mod tests {
         let source = std::fs::read_to_string(path).unwrap();
         let root = &crate::parser::parse_sections(&source)[0];
         let body = root.child("Tests").unwrap().body_trimmed();
-        let names = refs_to_names(parse_ref_list(body));
+        let usages = refs_to_test_usages(parse_ref_list(body));
         assert!(
-            names.contains(&"dummy_test".to_string()),
-            "body={body:?}, names={names:?}"
+            usages.iter().any(|usage| usage.name == "dummy_test"),
+            "body={body:?}, usages={usages:?}"
         );
     }
 }

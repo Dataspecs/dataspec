@@ -211,29 +211,23 @@ impl DataCatalog {
         &self,
         transformation: &'static Transformation,
     ) -> Vec<Box<dyn ExecutionStep>> {
-        let mut test_names = HashSet::new();
+        let mut runs: Vec<crate::entities::TestUsage> = Vec::new();
         if let Some(tests) = &transformation.tests {
-            test_names.extend(tests.iter().cloned());
+            runs.extend(tests.iter().cloned());
         }
         if let Some(columns) = &transformation.columns {
             for column in columns {
                 if let Some(tests) = &column.tests {
-                    test_names.extend(tests.iter().cloned());
+                    runs.extend(tests.iter().cloned());
                 }
             }
         }
 
-        let mut names: Vec<String> = test_names.into_iter().collect();
-        names.sort();
+        runs.sort_by(|a, b| a.name.cmp(&b.name));
 
-        names
+        runs
             .into_iter()
-            .map(|name| {
-                self.tests_by_name
-                    .get(&name)
-                    .map(|test| Box::new((*test).clone()) as Box<dyn ExecutionStep>)
-                    .unwrap_or_else(|| panic!("Can't find test {name}"))
-            })
+            .map(|usage| Box::new(usage) as Box<dyn ExecutionStep>)
             .collect()
     }
 

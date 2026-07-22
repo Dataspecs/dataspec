@@ -251,7 +251,7 @@ fn build_model_map(builder: MapBuilder, model_ctx: &ModelContext) -> MapBuilder 
         });
     }
 
-    builder.insert_vec("columns", |mut vec| {
+    builder = builder.insert_vec("columns", |mut vec| {
         for column in &model_ctx.columns {
             vec = vec.push_map(|mut map| {
                 map = map.insert_str("name", &column.name);
@@ -273,7 +273,30 @@ fn build_model_map(builder: MapBuilder, model_ctx: &ModelContext) -> MapBuilder 
             });
         }
         vec
-    })
+    });
+
+    if let Some(tested_column) = &model_ctx.tested_column {
+        builder.insert_map("tested_column", |mut map| {
+            map = map.insert_str("name", &tested_column.name);
+            if let Some(description) = &tested_column.description {
+                map = map.insert_str("description", description);
+            }
+            if let Some(data_type) = &tested_column.data_type {
+                map = map.insert_str("data_type", data_type);
+            }
+            if let Some(labels) = &tested_column.labels {
+                map = map.insert_vec("labels", |mut labels_vec| {
+                    for label in labels {
+                        labels_vec = labels_vec.push_str(label);
+                    }
+                    labels_vec
+                });
+            }
+            map
+        })
+    } else {
+        builder
+    }
 }
 
 fn selective_mustache_data<F>(
@@ -501,7 +524,7 @@ mod tests {
                 description: None,
                 data_type: Some("INT64".into()),
                 labels: None,
-                tests: Some(vec!["some_test".into()]),
+                tests: None,
             }]),
             tests: None,
             pre_runs: None,
@@ -533,6 +556,25 @@ mod tests {
         assert_eq!(
             rendered,
             "SELECT 100 FROM {{dummy_model}} WHERE name = dummy_model"
+        );
+    }
+
+    #[test]
+    fn render_compile_with_model_includes_tested_column_for_column_tests() {
+        let mut model_ctx = sample_model_context();
+        model_ctx.tested_column = Some(crate::context::ColumnTemplateMeta {
+            name: "amount".into(),
+            description: Some("Amount in wei".into()),
+            data_type: Some("NUMERIC".into()),
+            labels: None,
+        });
+        let props = HashMap::new();
+        let sql = "SELECT COUNT(*) FROM {{model.handler}} WHERE {{model.tested_column.name}} IS NULL";
+        let rendered = render_compile_with_model(sql, &props, &model_ctx);
+
+        assert_eq!(
+            rendered,
+            "SELECT COUNT(*) FROM {{dummy_model}} WHERE amount IS NULL"
         );
     }
 

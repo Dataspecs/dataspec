@@ -40,6 +40,9 @@ pub enum ParseError {
 
     #[error("operation `{operation}` not found when compiling `{entity}`")]
     OperationNotFound { operation: String, entity: String },
+
+    #[error("test `{test}` not found when compiling `{entity}`")]
+    TestNotFound { test: String, entity: String },
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;

@@ -14,7 +14,7 @@ pub struct Transformation {
     pub used_variables: Option<Vec<String>>,
     pub template: Option<TemplateUsage>,
     pub columns: Option<Vec<Column>>,
-    pub tests: Option<Vec<String>>,
+    pub tests: Option<Vec<crate::entities::TestUsage>>,
     pub pre_runs: Option<Vec<OperationUsage>>,
     pub post_runs: Option<Vec<OperationUsage>>,
     pub init_runs: Option<Vec<OperationUsage>>,

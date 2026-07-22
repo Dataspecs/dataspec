@@ -339,7 +339,7 @@ mod tests {
         assert!(
             t.tests
                 .as_ref()
-                .is_some_and(|tests| tests.contains(&"dummy_test".to_string()))
+                .is_some_and(|tests| tests.iter().any(|usage| usage.name == "dummy_test"))
         );
     }
 

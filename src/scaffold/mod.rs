@@ -288,12 +288,13 @@ cargo run -- list --models --json
 
 ## Rendering rules
 
-Hook operations compile in two steps: templates and operation code are inlined first (`{{props__*}}` from config resolved; `{{model.*}}` preserved), then each hook usage gets final SQL with model context and hook prop overrides applied. `{{model.handler}}` in a template becomes `{{<model_name>}}` at hook compile and the table ID at runtime.
+Hook operations and transformation/column tests compile in two steps: entity SQL is compiled first (`{{props__*}}` from config resolved; `{{model.*}}` preserved when referenced from a transformation), then each hook/test usage gets final SQL with model context and prop overrides applied. `{{model.handler}}` becomes `{{<model_name>}}` at usage compile and the table ID at runtime.
 
 | Variable | When | Notes |
 |----------|------|-------|
-| `{{props__*}}`, `{{model.*}}` | Hook compile | Baked into hook SQL; works in template chains |
-| `{{model.handler}}` | Hook compile → Runtime | Becomes `{{<model_name>}}`, then table ID |
+| `{{props__*}}`, `{{model.*}}` | Hook / test usage compile | Baked into hook/test SQL; works in template chains |
+| `{{model.tested_column}}` | Test usage compile (column tests) | Column the test is assigned to; absent for transformation-level tests |
+| `{{model.handler}}` | Usage compile → Runtime | Becomes `{{<model_name>}}`, then table ID |
 | `{{vars__*}}`, `{{session_id}}`, `{{<model_name>}}` | Runtime | CLI / execution context |
 
 See the [dataspec README](https://github.com/Dataspecs/dataspec#rendering-rules) for details and examples.

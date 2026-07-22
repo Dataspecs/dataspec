@@ -15,7 +15,7 @@ pub use context::{
 };
 pub use entities::{
     Column, Config, DataCatalog, Entity, ExecutionPlan, ExecutionStep, ExecutionStepJson, Model,
-    Operation, OperationUsage, Template, TemplateUsage, Test, Transformation,
+    Operation, OperationUsage, Template, TemplateUsage, Test, TestUsage, Transformation,
 };
 pub use engines::Engine;
 pub use error::{ParseError, Result};

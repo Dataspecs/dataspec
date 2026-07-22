@@ -8,6 +8,7 @@ pub mod operation_usage;
 pub mod template;
 pub mod template_usage;
 pub mod test;
+pub mod test_usage;
 pub mod transformation;
 
 pub use column::*;
@@ -20,6 +21,7 @@ pub use operation_usage::*;
 pub use template::*;
 pub use template_usage::*;
 pub use test::*;
+pub use test_usage::*;
 pub use transformation::*;
 
 use serde::{Deserialize, Serialize};

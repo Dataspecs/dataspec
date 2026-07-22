@@ -576,7 +576,6 @@ pub async fn spec_handler(catalog: &DataCatalog) {
 mod tests {
     use super::*;
     use crate::entities::{Column, Model, OperationUsage, Test, Transformation};
-    use std::path::PathBuf;
 
     #[test]
     fn build_transform_plan_includes_hook_steps() {
@@ -756,7 +755,7 @@ mod tests {
     }
 
     fn fixture_catalog_from_specs() -> DataCatalog {
-        let entities = crate::parser::parse_spec_dir(fixture_dir()).unwrap();
+        let entities = crate::parser::parse_spec_dir(crate::test_fixtures::fixture_dir()).unwrap();
         let mut catalog = DataCatalog::new();
         for (_, entity) in entities {
             match entity {
@@ -784,10 +783,6 @@ mod tests {
             }
         }
         catalog
-    }
-
-    fn fixture_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../specs/data-specs")
     }
 
     #[test]

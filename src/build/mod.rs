@@ -90,10 +90,7 @@ mod tests {
     use super::*;
     use crate::entities::DataCatalog;
     use crate::parser::parse_spec_dir;
-
-    fn fixture_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../specs/data-specs")
-    }
+    use crate::test_fixtures::fixture_dir;
 
     #[test]
     fn spec_builder_generates_expected_output() {

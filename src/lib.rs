@@ -8,6 +8,9 @@ pub mod handler;
 pub mod parser;
 pub mod scaffold;
 
+#[cfg(test)]
+mod test_fixtures;
+
 pub use build::spec_builder;
 pub use context::{
     render, render_compile, render_compile_with_model, render_runtime, render_runtime_step, Ctx,

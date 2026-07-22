@@ -272,13 +272,7 @@ pub fn parse_spec_dir(dir: impl AsRef<Path>) -> Result<Vec<(PathBuf, Entity)>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    fn fixture(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../specs/data-specs")
-            .join(name)
-    }
+    use crate::test_fixtures::fixture;
 
     #[test]
     fn parses_embedded_model_hooks() {

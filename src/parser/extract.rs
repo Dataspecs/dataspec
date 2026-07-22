@@ -357,9 +357,10 @@ mod tests {
 
     #[test]
     fn parses_tests_section_body_from_dummy_model_v1() {
-        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../specs/data-specs/transformations/dummy_model_v1.md");
-        let source = std::fs::read_to_string(path).unwrap();
+        let source = std::fs::read_to_string(crate::test_fixtures::fixture(
+            "transformations/dummy_model_v1.md",
+        ))
+        .unwrap();
         let root = &crate::parser::parse_sections(&source)[0];
         let body = root.child("Tests").unwrap().body_trimmed();
         let usages = refs_to_test_usages(parse_ref_list(body));

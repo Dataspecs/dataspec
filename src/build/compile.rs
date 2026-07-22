@@ -602,11 +602,8 @@ mod tests {
     use super::*;
     use crate::entities::{Column, Model, Operation, OperationUsage, Test, TestUsage};
     use crate::parser::parse_spec_dir;
+    use crate::test_fixtures::fixture_dir;
     use std::path::PathBuf;
-
-    fn fixture_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../specs/data-specs")
-    }
 
     #[test]
     fn compile_preserves_caller_props_when_template_nests_template() {

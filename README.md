@@ -288,13 +288,28 @@ Two rendering phases: **compilation** and **execution**.
 | Variable | When | Description |
 |----------|------|-------------|
 | `{{props__<key>}}` | Compile (hook / test usage) | Config and template params; hook/test prop overrides — baked into `OperationUsage.sql_code` / `TestUsage.sql_code`. Config props may resolve earlier during template inlining |
-| `{{model.name}}`, `{{model.tags}}`, `{{model.description}}`, `{{model.managed}}`, `{{model.disabled}}`, `{{model.meta}}` | Compile (hook / test usage) | Model metadata from the transformation's model; preserved through template inlining until usage compile |
-| `{{model.columns}}` | Compile (hook / test usage) | Column metadata from the transformation (excludes column tests); supports `{{#model.columns}}` sections |
+| `{{model.name}}`, `{{model.tags}}`, `{{model.description}}`, `{{model.managed}}`, `{{model.disabled}}`, `{{model.meta}}` | Compile (transformation template / hook / test usage) | Model metadata from the transformation's model; for hooks/tests, preserved through template inlining until usage compile |
+| `{{model.columns}}` | Compile (transformation template / hook / test usage) | Column metadata from the transformation (excludes column tests); supports `{{#model.columns}}` sections |
 | `{{model.tested_column}}` | Compile (column test usage) | Column metadata for the column the test is assigned to; absent for transformation-level tests. Fields: `name`, `description`, `data_type`, `labels` |
-| `{{model.handler}}` | Compile (hook / test usage) → Runtime | At usage compile, becomes `{{<model_name>}}`; at runtime, resolves to table ID. Works in template bodies |
+| `{{model.handler}}` | Compile (transformation template / hook / test usage) → Runtime | At compile, becomes `{{<model_name>}}`; at runtime, resolves to table ID. Works in template bodies |
 | `{{vars__<key>}}` / `{{var__<key>}}` | Runtime | CLI variables (e.g. `{{var__report_year}}`) |
 | `{{<model_name>}}` | Runtime | Table ID for a model (from catalog or `--mappings`) |
 | `{{session_id}}` | Runtime | UUID with unique session id of this execution |
+
+#### Transformation model context
+
+When a transformation references a template, a `{{model.*}}` namespace is available at compile time. Model context comes from `Transformation.model` and `Transformation.columns`.
+
+During transformation compile, the template body and inner **Code** are rendered together: config props, template mention props, and all `{{model.*}}` fields are resolved in one step. `{{model.handler}}` becomes `{{<model_name>}}` (e.g. `{{dummy_model}}`). Nested template chains inherit the same model context.
+
+Put `{{model.handler}}`, `{{model.name}}`, `{{#model.columns}}`, etc. in the template body or transformation Code — model variables work in both. Example:
+
+```sql
+-- template body:        CREATE TABLE tmp AS SELECT * FROM {{model.handler}} WHERE {{props__code}}
+-- transformation Code:  n = {{model.name}}
+-- after compile:         CREATE TABLE tmp AS SELECT * FROM {{dummy_model}} WHERE n = dummy_model
+-- after runtime:         CREATE TABLE tmp AS SELECT * FROM dataset.dummy_model WHERE n = dummy_model
+```
 
 #### Hook model context
 
@@ -331,7 +346,7 @@ Column iteration at compile time:
 -- after hook compile: `id` INT64, `name` STRING,
 ```
 
-`{{model.*}}` is only defined for hook runs and transformation/column test runs. Operations that use model variables should not be run via standalone `apply`.
+`{{model.*}}` is only defined when compiling a transformation (template and Code), hook runs, and transformation/column test runs. Operations that use model variables should not be run via standalone `apply`.
 
 #### Test model context
 

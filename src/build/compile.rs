@@ -180,6 +180,7 @@ fn compile_transformation(
     tests: &HashMap<String, Test>,
 ) -> Result<()> {
     let entity_name = transformation.name.clone();
+    let model_ctx = ModelContext::from_transformation(model, transformation);
     transformation.sql_code = compile_sql(
         &transformation.sql_code,
         transformation.template.as_ref(),
@@ -188,10 +189,10 @@ fn compile_transformation(
         config_props,
         &entity_name,
         false,
+        Some(&model_ctx),
     )?;
     transformation.template = None;
     transformation.dependent_tables = get_dependent_tables(&transformation.sql_code);
-    let model_ctx = ModelContext::from_transformation(model, transformation);
     compile_operation_usages(
         &mut transformation.pre_runs,
         &model_ctx,
@@ -252,6 +253,7 @@ fn compile_operation(
         config_props,
         &entity_name,
         preserve_props,
+        None,
     )?;
     operation.template = None;
     operation.dependent_tables = get_dependent_tables(&operation.sql_code);
@@ -287,7 +289,7 @@ fn compile_template_entity(
             template: usage.name.clone(),
             entity: entity_name.clone(),
         })?;
-        let body_sql = resolve_template_body(outer, templates, config_props, &entity_name, false)?;
+        let body_sql = resolve_template_body(outer, templates, config_props, &entity_name, false, None)?;
         let mut props = config_props.clone();
         merge_props(
             &mut props,
@@ -329,6 +331,7 @@ fn compile_sql(
     config_props: &HashMap<String, String>,
     entity_name: &str,
     preserve_props: bool,
+    model_ctx: Option<&ModelContext>,
 ) -> Result<String> {
     if let Some(usage) = template_usage {
         let template = templates.get(&usage.name).ok_or_else(|| ParseError::TemplateNotFound {
@@ -341,37 +344,69 @@ fn compile_sql(
             config_props,
             entity_name,
             preserve_props,
+            model_ctx,
         )?;
         let mut props = config_props.clone();
-        merge_props(
+        merge_props_for_context(
             &mut props,
             template.default_props.as_ref(),
             config_props,
             entity_name,
             preserve_props,
+            model_ctx,
         )?;
-        merge_props(&mut props, entity_defaults, config_props, entity_name, preserve_props)?;
-        let rendered_inner = render_compile_checked(
+        merge_props_for_context(
+            &mut props,
+            entity_defaults,
+            config_props,
+            entity_name,
+            preserve_props,
+            model_ctx,
+        )?;
+        let rendered_inner = render_compile_for_context(
             inner_sql,
             &props,
             entity_name,
             &[],
             preserve_props,
+            model_ctx,
         )?;
         let render_ctx = props.clone();
-        merge_props(
+        merge_props_for_context(
             &mut props,
             usage.props.as_ref(),
             &render_ctx,
             entity_name,
             preserve_props,
+            model_ctx,
         )?;
         props.insert("code".to_string(), rendered_inner);
-        render_compile_checked(&body_sql, &props, entity_name, &[], preserve_props)
+        render_compile_for_context(
+            &body_sql,
+            &props,
+            entity_name,
+            &[],
+            preserve_props,
+            model_ctx,
+        )
     } else {
         let mut props = config_props.clone();
-        merge_props(&mut props, entity_defaults, config_props, entity_name, preserve_props)?;
-        render_compile_checked(inner_sql, &props, entity_name, &[], preserve_props)
+        merge_props_for_context(
+            &mut props,
+            entity_defaults,
+            config_props,
+            entity_name,
+            preserve_props,
+            model_ctx,
+        )?;
+        render_compile_for_context(
+            inner_sql,
+            &props,
+            entity_name,
+            &[],
+            preserve_props,
+            model_ctx,
+        )
     }
 }
 
@@ -381,6 +416,7 @@ fn resolve_template_body(
     config_props: &HashMap<String, String>,
     entity_name: &str,
     preserve_props: bool,
+    model_ctx: Option<&ModelContext>,
 ) -> Result<String> {
     if let Some(nested) = &template.template {
         compile_sql(
@@ -391,9 +427,40 @@ fn resolve_template_body(
             config_props,
             entity_name,
             preserve_props,
+            model_ctx,
         )
     } else {
         Ok(template.sql_code.clone())
+    }
+}
+
+fn merge_props_for_context(
+    target: &mut HashMap<String, String>,
+    source: Option<&HashMap<String, String>>,
+    render_ctx: &HashMap<String, String>,
+    entity_name: &str,
+    preserve_props: bool,
+    model_ctx: Option<&ModelContext>,
+) -> Result<()> {
+    if let Some(model_ctx) = model_ctx {
+        merge_props_with_model(target, source, render_ctx, model_ctx, entity_name)
+    } else {
+        merge_props(target, source, render_ctx, entity_name, preserve_props)
+    }
+}
+
+fn render_compile_for_context(
+    template: &str,
+    props: &HashMap<String, String>,
+    entity_name: &str,
+    deferred: &[&str],
+    preserve_props: bool,
+    model_ctx: Option<&ModelContext>,
+) -> Result<String> {
+    if let Some(model_ctx) = model_ctx {
+        render_compile_with_model_checked(template, props, model_ctx, entity_name)
+    } else {
+        render_compile_checked(template, props, entity_name, deferred, preserve_props)
     }
 }
 
@@ -1101,6 +1168,66 @@ mod tests {
         assert_eq!(
             hook.sql_code,
             "CREATE TABLE tmp AS SELECT * FROM {{dummy_model}} WHERE SELECT 1"
+        );
+    }
+
+    #[test]
+    fn compile_transformation_template_renders_model_context() {
+        let mut entities = vec![
+            (
+                PathBuf::from("model.md"),
+                Entity::Model(Model {
+                    name: "dummy_model".into(),
+                    description: None,
+                    tags: None,
+                    table_id: None,
+                    managed: false,
+                    disabled: false,
+                    meta: None,
+                    default_transformation: None,
+                }),
+            ),
+            (
+                PathBuf::from("tpl.md"),
+                Entity::Template(Template {
+                    name: "model_tpl".into(),
+                    description: None,
+                    sql_code: "CREATE TABLE tmp AS SELECT * FROM {{model.handler}} WHERE {{props__code}}".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    default_props: None,
+                    template: None,
+                }),
+            ),
+            (
+                PathBuf::from("t.md"),
+                Entity::Transformation(Transformation {
+                    name: "dummy_model__default".into(),
+                    sql_code: "n = {{model.name}}".into(),
+                    model: "dummy_model".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    template: Some(TemplateUsage {
+                        name: "model_tpl".into(),
+                        props: None,
+                    }),
+                    columns: None,
+                    tests: None,
+                    pre_runs: None,
+                    post_runs: None,
+                    init_runs: None,
+                }),
+            ),
+        ];
+
+        compile_entities(&mut entities, &Config::default()).unwrap();
+
+        let Entity::Transformation(t) = &entities[2].1 else {
+            panic!("expected transformation");
+        };
+        assert_eq!(
+            t.sql_code,
+            "CREATE TABLE tmp AS SELECT * FROM {{dummy_model}} WHERE n = dummy_model"
         );
     }
 

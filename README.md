@@ -12,8 +12,6 @@ This repo is the **compiler and runtime**. For the spec format itself, examples,
 
 ---
 
-
-
 ## One tool, two roles
 
 
@@ -27,11 +25,7 @@ The `dataspec` binary does **not** parse specs or execute SQL. That happens insi
 
 ---
 
-
-
 ## Quick start
-
-
 
 ### 1. Install the CLI
 
@@ -40,8 +34,6 @@ Install the scaffolding tool from [crates.io](https://crates.io/crates/dataspec)
 ```bash
 cargo install dataspec
 ```
-
-
 
 ### 2. Create a project
 
@@ -70,8 +62,6 @@ my_pipeline/
     └── data.rs              # generated — do not edit (gitignored)
 ```
 
-
-
 ### 3. Build and run
 
 Build the project binary, then use it for all runtime commands (`transform`, `apply`, `test`, `list`):
@@ -84,51 +74,8 @@ cargo build --release
 
 On `cargo build --release`, `build.rs` walks `data-specs/**/*.md`, parses them, and writes `src/data.rs` with static entities and a `register_data()` function.
 
----
-
-
-
-## How it works
-
-
-
-### Build time — `spec_builder`
-
-Called from the generated project's `build.rs`:
-
-```rust
-fn main() {
-    dataspec::spec_builder("data-specs", "src/data.rs")
-        .expect("failed to build data catalog");
-}
-```
-
-`spec_builder`:
-
-1. Parses every `.md` file under `data-specs/`
-2. Validates (one config, no duplicate entity names)
-3. Emits `src/data.rs` with `LazyLock` statics for each entity
-4. Prints `cargo:rerun-if-changed` for the specs directory
-
-Embedded model transformations are emitted as `{model}__default_transformation`.
-
-### Runtime — `spec_handler`
-
-Called from the generated project's `main.rs`:
-
-```rust
-#[tokio::main]
-async fn main() {
-    let catalog = data::register_data();
-    dataspec::spec_handler(&catalog).await;
-}
-```
-
-`spec_handler` is the CLI for the **project binary**, not the `dataspec` scaffolding tool.
 
 ---
-
-
 
 ## Project binary CLI
 
@@ -211,8 +158,6 @@ Run operations by name or tag:
 ./target/release/my_pipeline apply --names dummy_operation --json
 ```
 
-
-
 ### Test
 
 Run tests linked to models (from the default or explicit transformation, plus column-level tests):
@@ -236,8 +181,6 @@ Run tests linked to models (from the default or explicit transformation, plus co
 ./target/release/my_pipeline test --names dummy_model --json
 ```
 
-
-
 ### List
 
 Inspect catalog contents:
@@ -257,8 +200,6 @@ Inspect catalog contents:
 ```
 
 ---
-
-
 
 ## Storage backends
 
@@ -290,8 +231,6 @@ config
 
 ---
 
-
-
 ### 3. Run with the Specs Executor
 
 Specs are compiled into a Rust binary. Use it as a CLI to run transformations, tests, and operations against your storage backend. On large projects with many models, execution performance stays close to executing SQL directly from application code.
@@ -302,20 +241,17 @@ Two rendering phases: **compilation** and **execution**.
 
 #### Compilation-time rendering
 
-- Renders all `{{props}}` and `{{self}}` variables
+- Renders all `{{props}}` and `{{model}}` variables
 - Inlines templates into models, operations, and tests
 - After rendering, FROM clauses should reference only models or table names
 - SQL analysis runs to compute dependencies
-
-
 
 #### Execution-time rendering
 
 - Resolves model references to table names (with optional `--mappings`)
 - Substitutes `{{vars}}` passed via CLI
+- Substitutes `{{session_id}}` passed via CLI
 - Produces final executable SQL
-
-
 
 #### Rendering context
 
@@ -332,8 +268,6 @@ Two rendering phases: **compilation** and **execution**.
 | `{{session_id}}`                                                                                                         | Runtime                                                         | UUID with unique session id of this execution                                                                                                                                 |
 
 
-
-
 #### Transformation model context
 
 When a transformation references a template, a `{{model.*}}` namespace is available at compile time. Model context comes from `Transformation.model` and `Transformation.columns`.
@@ -348,8 +282,6 @@ Put `{{model.handler}}`, `{{model.name}}`, `{{#model.columns}}`, etc. in the tem
 -- after compile:         CREATE TABLE tmp AS SELECT * FROM {{dummy_model}} WHERE n = dummy_model
 -- after runtime:         CREATE TABLE tmp AS SELECT * FROM dataset.dummy_model WHERE n = dummy_model
 ```
-
-
 
 #### Hook model context
 
@@ -409,8 +341,6 @@ Example column test SQL:
 
 Variable syntax follows the [mustache](https://lib.rs/crates/mustache) crate: `{{name}}`. Use `{{var__name}}` (or `{{vars__name}}`) for CLI variables and `{{props__name}}` for config/template props.
 
-
-
 ## Spec format
 
 Specs are Markdown files with a fixed heading structure. Each file describes one entity; the `## Type` section declares its kind (`model`, `transformation`, `template`, `test`, `operation`, or `config`).
@@ -418,8 +348,6 @@ Specs are Markdown files with a fixed heading structure. Each file describes one
 See [specs/README.md](https://github.com/Dataspecs/specs/blob/main/README.md) for the full format reference, [specs/data-specs/](https://github.com/Dataspecs/specs/tree/main/data-specs/) for minimal examples, and [specs/examples/eth/](https://github.com/Dataspecs/specs/tree/main/examples/eth/) for a realistic dependency graph.
 
 ---
-
-
 
 ## Scaffolding CLI reference
 
@@ -434,53 +362,7 @@ dataspec new <name> [--path DIR]
 | -------- | --------------------------------------------------------------- |
 | `--path` | Directory to create the project in (default: current directory) |
 
-
 ---
-
-
-
-## Library API
-
-This crate is a library used by generated projects. Main entry points:
-
-
-| Function                               | Used in    | Purpose                                            |
-| -------------------------------------- | ---------- | -------------------------------------------------- |
-| `spec_builder(specs_dir, output_path)` | `build.rs` | Parse specs, generate `data.rs`                    |
-| `spec_handler(catalog)`                | `main.rs`  | Runtime CLI (`transform`, `apply`, `test`, `list`) |
-
-
-Other exports: `DataCatalog`, entity types (`Model`, `Transformation`, …), `parse_spec_file`, `parse_spec_dir` for programmatic parsing.
-
----
-
-
-
-## Crate layout
-
-```
-src/
-├── build/         spec_builder, codegen (md → data.rs)
-├── parser/        markdown → entities
-├── handler.rs     spec_handler (runtime CLI)
-├── engines/       dryrun, BigQuery, PostgreSQL
-├── scaffold/      dataspec new
-├── entities/      Model, Transformation, DataCatalog, …
-└── main.rs        scaffolding CLI only (new)
-```
-
----
-
-
-
-## Next
-
-- External modules (metadata.data_modules, dataspec add)
-- Partition/Clusters parsing
-
----
-
-
 
 ## License
 

@@ -4,38 +4,50 @@ Data Specs is a markdown-first data transformation framework. You define models,
 files. A Rust compiler turns those specs into a typed entity catalog at build time; a generated binary runs that catalog against your warehouse
 at runtime.
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Status: early](https://img.shields.io/badge/status-early--stage-orange)](#)
+[License: Apache 2.0](LICENSE)
+[Status: early](#)
 
 This repo is the **compiler and runtime**. For the spec format itself, examples, and the "why Markdown instead of YAML+Jinja" case, see
-[`Dataspecs/specs`](https://github.com/Dataspecs/specs).
+`[Dataspecs/specs](https://github.com/Dataspecs/specs)`.
 
 ---
 
-## Two tools, two roles
 
-| Tool | When | What it does |
-|------|------|--------------|
-| **`dataspec` CLI** | Once, to bootstrap | Scaffolds a new Rust project with `data-specs/` and wiring |
-| **Project binary** | Day to day | Looks up entities in the catalog and runs SQL via `transform`, `apply`, `test`, or `list` |
+
+## One tool, two roles
+
+
+| Tool               | When               | What it does                                                                              |
+| ------------------ | ------------------ | ----------------------------------------------------------------------------------------- |
+| `dataspec` **CLI** | Once, to bootstrap | Scaffolds a new Rust project with `data-specs/` and wiring                                |
+| **Project binary** | Day to day         | Looks up entities in the catalog and runs SQL via `transform`, `apply`, `test`, or `list` |
+
 
 The `dataspec` binary does **not** parse specs or execute SQL. That happens inside each generated project: `build.rs` compiles specs, the binary runs them.
 
 ---
 
+
+
 ## Quick start
 
-### 1. Build the tool
+
+
+### 1. Install the CLI
+
+Install the scaffolding tool from [crates.io](https://crates.io/crates/dataspec):
 
 ```bash
-cargo build --release --features bq,pg
+cargo install dataspec
 ```
+
+
 
 ### 2. Create a project
 
 ```bash
-cargo run -- new my_pipeline
-cd ../my_pipeline
+dataspec new my_pipeline
+cd my_pipeline
 ```
 
 This creates:
@@ -58,17 +70,23 @@ my_pipeline/
     └── data.rs              # generated — do not edit (gitignored)
 ```
 
+
+
 ### 3. Build and run
 
+Build the project binary, then use it for all runtime commands (`transform`, `apply`, `test`, `list`):
+
 ```bash
-cargo build
-cargo run -- transform --names dummy_model
-cargo run -- list --models
+cargo build --release
+./target/release/my_pipeline transform --names dummy_model
+./target/release/my_pipeline list --models
 ```
 
-On `cargo build`, `build.rs` walks `data-specs/**/*.md`, parses them, and writes `src/data.rs` with static entities and a `register_data()` function.
+On `cargo build --release`, `build.rs` walks `data-specs/**/*.md`, parses them, and writes `src/data.rs` with static entities and a `register_data()` function.
 
 ---
+
+
 
 ## How it works
 
@@ -110,9 +128,11 @@ async fn main() {
 
 ---
 
+
+
 ## Project binary CLI
 
-After `cargo build`, run the project binary (same name as the crate).
+After `cargo build --release`, run `./target/release/<crate_name>` (same name as the crate). Examples below use `my_pipeline`.
 
 `transform`, `apply`, and `test` share the same runtime flags: `--names`, `--tags`, `--vars`, `--mappings`, `--debug`, and `--json`. Names and tags select different entity kinds depending on the command (see below). `transform` also accepts `--init` to run init hooks.
 
@@ -129,24 +149,24 @@ Hooks reference [operations](https://github.com/Dataspecs/specs/blob/main/README
 
 ```bash
 # Single model (uses default transformation)
-cargo run -- transform --names dummy_model
+./target/release/my_pipeline transform --names dummy_model
 
 # Explicit transformation
-cargo run -- transform --names dummy_model::my_transformation_v2
+./target/release/my_pipeline transform --names dummy_model::my_transformation_v2
 
 # Run init hooks (e.g. one-time table setup) before pre/transformation/post
-cargo run -- transform --names dummy_model --init
+./target/release/my_pipeline transform --names dummy_model --init
 
 # By tags
-cargo run -- transform --tags core,reporting
+./target/release/my_pipeline transform --tags core,reporting
 
 # Runtime variables and table mappings
-cargo run -- transform --names my_model \
+./target/release/my_pipeline transform --names my_model \
   --vars report_year=2024 \
   --mappings my_model=dataset.table_id
 
 # JSON output
-cargo run -- transform --names dummy_model --json
+./target/release/my_pipeline transform --names dummy_model --json
 ```
 
 Example hooks in a transformation spec:
@@ -177,19 +197,21 @@ Run operations by name or tag:
 
 ```bash
 # Single operation
-cargo run -- apply --names dummy_operation
+./target/release/my_pipeline apply --names dummy_operation
 
 # By tags
-cargo run -- apply --tags maintenance
+./target/release/my_pipeline apply --tags maintenance
 
 # Runtime variables and table mappings
-cargo run -- apply --names dummy_operation \
+./target/release/my_pipeline apply --names dummy_operation \
   --vars report_year=2024 \
   --mappings dummy_model=dataset.table_id
 
 # JSON output
-cargo run -- apply --names dummy_operation --json
+./target/release/my_pipeline apply --names dummy_operation --json
 ```
+
+
 
 ### Test
 
@@ -197,52 +219,58 @@ Run tests linked to models (from the default or explicit transformation, plus co
 
 ```bash
 # Single model (uses default transformation)
-cargo run -- test --names dummy_model
+./target/release/my_pipeline test --names dummy_model
 
 # Explicit transformation
-cargo run -- test --names dummy_model::my_transformation_v2
+./target/release/my_pipeline test --names dummy_model::my_transformation_v2
 
 # By tags
-cargo run -- test --tags core,reporting
+./target/release/my_pipeline test --tags core,reporting
 
 # Runtime variables and table mappings
-cargo run -- test --names dummy_model \
+./target/release/my_pipeline test --names dummy_model \
   --vars report_year=2024 \
   --mappings dummy_model=dataset.table_id
 
 # JSON output
-cargo run -- test --names dummy_model --json
+./target/release/my_pipeline test --names dummy_model --json
 ```
+
+
 
 ### List
 
 Inspect catalog contents:
 
 ```bash
-cargo run -- list --models
-cargo run -- list --operations
-cargo run -- list --transformations
-cargo run -- list --templates
-cargo run -- list --tests
+./target/release/my_pipeline list --models
+./target/release/my_pipeline list --operations
+./target/release/my_pipeline list --transformations
+./target/release/my_pipeline list --templates
+./target/release/my_pipeline list --tests
 
 # By name
-cargo run -- list --names dummy_model --models
+./target/release/my_pipeline list --names dummy_model --models
 
 # JSON
-cargo run -- list --models --json
+./target/release/my_pipeline list --models --json
 ```
 
 ---
+
+
 
 ## Storage backends
 
 Set `provider` in `data-specs/config/config.md`:
 
-| `provider` | Description |
-|------------|-------------|
-| `dryrun` | Default. Logs SQL, no warehouse call |
-| `bq` | Google BigQuery (requires `project_id`; optional `service_account_path`) |
-| `pg` / `postgres` | PostgreSQL (requires `connection_string`) |
+
+| `provider`        | Description                                                              |
+| ----------------- | ------------------------------------------------------------------------ |
+| `dryrun`          | Default. Logs SQL, no warehouse call                                     |
+| `bq`              | Google BigQuery (requires `project_id`; optional `service_account_path`) |
+| `pg` / `postgres` | PostgreSQL (requires `connection_string`)                                |
+
 
 Generated projects depend on `dataspec` with `features = ["bq", "pg"]`. Use `dryrun` for local development without credentials.
 
@@ -261,12 +289,14 @@ config
 ```
 
 ---
+
+
+
 ### 3. Run with the Specs Executor
 
 Specs are compiled into a Rust binary. Use it as a CLI to run transformations, tests, and operations against your storage backend. On large projects with many models, execution performance stays close to executing SQL directly from application code.
 
-<details>
-<summary>Rendering rules</summary>
+Rendering rules
 
 Two rendering phases: **compilation** and **execution**.
 
@@ -277,24 +307,32 @@ Two rendering phases: **compilation** and **execution**.
 - After rendering, FROM clauses should reference only models or table names
 - SQL analysis runs to compute dependencies
 
+
+
 #### Execution-time rendering
 
 - Resolves model references to table names (with optional `--mappings`)
 - Substitutes `{{vars}}` passed via CLI
 - Produces final executable SQL
 
+
+
 #### Rendering context
 
-| Variable | When | Description |
-|----------|------|-------------|
-| `{{props__<key>}}` | Compile (hook / test usage) | Config and template params; hook/test prop overrides — baked into `OperationUsage.sql_code` / `TestUsage.sql_code`. Config props may resolve earlier during template inlining |
-| `{{model.name}}`, `{{model.tags}}`, `{{model.description}}`, `{{model.managed}}`, `{{model.disabled}}`, `{{model.meta}}` | Compile (transformation template / hook / test usage) | Model metadata from the transformation's model; for hooks/tests, preserved through template inlining until usage compile |
-| `{{model.columns}}` | Compile (transformation template / hook / test usage) | Column metadata from the transformation (excludes column tests); supports `{{#model.columns}}` sections |
-| `{{model.tested_column}}` | Compile (column test usage) | Column metadata for the column the test is assigned to; absent for transformation-level tests. Fields: `name`, `description`, `data_type`, `labels` |
-| `{{model.handler}}` | Compile (transformation template / hook / test usage) → Runtime | At compile, becomes `{{<model_name>}}`; at runtime, resolves to table ID. Works in template bodies |
-| `{{vars__<key>}}` / `{{var__<key>}}` | Runtime | CLI variables (e.g. `{{var__report_year}}`) |
-| `{{<model_name>}}` | Runtime | Table ID for a model (from catalog or `--mappings`) |
-| `{{session_id}}` | Runtime | UUID with unique session id of this execution |
+
+| Variable                                                                                                                 | When                                                            | Description                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{{props__<key>}}`                                                                                                       | Compile (hook / test usage)                                     | Config and template params; hook/test prop overrides — baked into `OperationUsage.sql_code` / `TestUsage.sql_code`. Config props may resolve earlier during template inlining |
+| `{{model.name}}`, `{{model.tags}}`, `{{model.description}}`, `{{model.managed}}`, `{{model.disabled}}`, `{{model.meta}}` | Compile (transformation template / hook / test usage)           | Model metadata from the transformation's model; for hooks/tests, preserved through template inlining until usage compile                                                      |
+| `{{model.columns}}`                                                                                                      | Compile (transformation template / hook / test usage)           | Column metadata from the transformation (excludes column tests); supports `{{#model.columns}}` sections                                                                       |
+| `{{model.tested_column}}`                                                                                                | Compile (column test usage)                                     | Column metadata for the column the test is assigned to; absent for transformation-level tests. Fields: `name`, `description`, `data_type`, `labels`                           |
+| `{{model.handler}}`                                                                                                      | Compile (transformation template / hook / test usage) → Runtime | At compile, becomes `{{<model_name>}}`; at runtime, resolves to table ID. Works in template bodies                                                                            |
+| `{{vars__<key>}}` / `{{var__<key>}}`                                                                                     | Runtime                                                         | CLI variables (e.g. `{{var__report_year}}`)                                                                                                                                   |
+| `{{<model_name>}}`                                                                                                       | Runtime                                                         | Table ID for a model (from catalog or `--mappings`)                                                                                                                           |
+| `{{session_id}}`                                                                                                         | Runtime                                                         | UUID with unique session id of this execution                                                                                                                                 |
+
+
+
 
 #### Transformation model context
 
@@ -310,6 +348,8 @@ Put `{{model.handler}}`, `{{model.name}}`, `{{#model.columns}}`, etc. in the tem
 -- after compile:         CREATE TABLE tmp AS SELECT * FROM {{dummy_model}} WHERE n = dummy_model
 -- after runtime:         CREATE TABLE tmp AS SELECT * FROM dataset.dummy_model WHERE n = dummy_model
 ```
+
+
 
 #### Hook model context
 
@@ -368,7 +408,8 @@ Example column test SQL:
 `{{model.*}}` is only defined for test runs from a transformation. Tests invoked via standalone `test --names my_test` use the global test SQL without model context.
 
 Variable syntax follows the [mustache](https://lib.rs/crates/mustache) crate: `{{name}}`. Use `{{var__name}}` (or `{{vars__name}}`) for CLI variables and `{{props__name}}` for config/template props.
-</details>
+
+
 
 ## Spec format
 
@@ -378,30 +419,42 @@ See [specs/README.md](https://github.com/Dataspecs/specs/blob/main/README.md) fo
 
 ---
 
+
+
 ## Scaffolding CLI reference
+
+Install with `cargo install dataspec`, then:
 
 ```bash
 dataspec new <name> [--path DIR]
 ```
 
-| Flag | Description |
-|------|-------------|
+
+| Flag     | Description                                                     |
+| -------- | --------------------------------------------------------------- |
 | `--path` | Directory to create the project in (default: current directory) |
 
+
 ---
+
+
 
 ## Library API
 
 This crate is a library used by generated projects. Main entry points:
 
-| Function | Used in | Purpose |
-|----------|---------|---------|
-| `spec_builder(specs_dir, output_path)` | `build.rs` | Parse specs, generate `data.rs` |
-| `spec_handler(catalog)` | `main.rs` | Runtime CLI (`transform`, `apply`, `test`, `list`) |
+
+| Function                               | Used in    | Purpose                                            |
+| -------------------------------------- | ---------- | -------------------------------------------------- |
+| `spec_builder(specs_dir, output_path)` | `build.rs` | Parse specs, generate `data.rs`                    |
+| `spec_handler(catalog)`                | `main.rs`  | Runtime CLI (`transform`, `apply`, `test`, `list`) |
+
 
 Other exports: `DataCatalog`, entity types (`Model`, `Transformation`, …), `parse_spec_file`, `parse_spec_dir` for programmatic parsing.
 
 ---
+
+
 
 ## Crate layout
 
@@ -417,10 +470,17 @@ src/
 ```
 
 ---
+
+
+
 ## Next
+
 - External modules (metadata.data_modules, dataspec add)
 - Partition/Clusters parsing
+
 ---
+
+
 
 ## License
 

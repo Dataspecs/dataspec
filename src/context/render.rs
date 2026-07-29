@@ -18,21 +18,53 @@ pub fn render_compile_deferred(
     deferred: &[&str],
 ) -> String {
     let (shielded, tokens) = shield_model_context_tags(template);
-    let rendered = render_selective(&shielded, |key| {
-        if let Some(name) = key.strip_prefix("props__") {
-            if deferred.contains(&name) {
-                return None;
+    let rendered = if template_has_model_context(template) {
+        substitute_props_literal(&shielded, props, deferred)
+    } else {
+        render_selective(&shielded, |key| {
+            if let Some(name) = key.strip_prefix("props__") {
+                if deferred.contains(&name) {
+                    return None;
+                }
+                props
+                    .get(name)
+                    .cloned()
+                    .map(Some)
+                    .unwrap_or_else(|| panic!("Prop props__{name} not found in context"))
+            } else {
+                None
             }
-            props
-                .get(name)
-                .cloned()
-                .map(Some)
-                .unwrap_or_else(|| panic!("Prop props__{name} not found in context"))
-        } else {
-            None
-        }
-    });
+        })
+    };
     restore_model_context_tags(&rendered, &tokens)
+}
+
+fn template_has_model_context(template: &str) -> bool {
+    extract_mustache_tags(template)
+        .iter()
+        .any(|key| is_model_context_tag(key))
+}
+
+fn substitute_props_literal(
+    template: &str,
+    props: &HashMap<String, String>,
+    deferred: &[&str],
+) -> String {
+    let mut output = template.to_string();
+    for key in extract_mustache_tags(template) {
+        let Some(prop) = key.strip_prefix("props__") else {
+            continue;
+        };
+        if deferred.contains(&prop) {
+            continue;
+        }
+        let Some(value) = props.get(prop) else {
+            continue;
+        };
+        output = output.replace(&format!("{{{{props__{prop}}}}}"), value);
+        output = output.replace(&format!("{{{{{{props__{prop}}}}}}}"), value);
+    }
+    output
 }
 
 /// Backwards-compatible alias for [`render_compile_deferred`].
@@ -548,6 +580,16 @@ mod tests {
     }
 
     #[test]
+    fn render_compile_deferred_preserves_last_inside_model_columns() {
+        let props = HashMap::from([("code".into(), "SELECT 1".into())]);
+        let sql = r#"{{#model.columns}}"{{name}}"{{^last}}, {{/last}}{{/model.columns}} {{props__code}}"#;
+        let rendered = render_compile_deferred(sql, &props, &[]);
+
+        assert!(rendered.contains("{{^last}}"), "{rendered}");
+        assert!(rendered.contains("SELECT 1"));
+    }
+
+    #[test]
     fn render_compile_deferred_preserve_model_keeps_model_tags_when_props_resolve() {
         let props = HashMap::from([("code".into(), "SELECT 1".into())]);
         let sql = "CREATE TABLE t AS ({{props__code}}) FROM {{model.handler}}";
@@ -713,6 +755,61 @@ mod tests {
         let rendered = render_compile_with_model(sql, &props, &model_ctx);
 
         assert_eq!(rendered, "owner=team;tier=gold;zone=eu");
+    }
+
+    #[test]
+    fn render_compile_with_model_insert_template_renders_commas_between_columns() {
+        let model = Model {
+            name: "dummy_model".into(),
+            description: None,
+            tags: None,
+            table_id: None,
+            managed: true,
+            disabled: false,
+            meta: None,
+            default_transformation: None,
+        };
+        let transformation = Transformation {
+            name: "dummy_model__default".into(),
+            sql_code: String::new(),
+            model: "dummy_model".into(),
+            dependent_tables: vec![],
+            used_variables: None,
+            template: None,
+            columns: Some(vec![
+                Column {
+                    name: "id".into(),
+                    description: None,
+                    data_type: Some("INT64".into()),
+                    labels: None,
+                    tests: None,
+                },
+                Column {
+                    name: "amount".into(),
+                    description: None,
+                    data_type: Some("NUMERIC".into()),
+                    labels: None,
+                    tests: None,
+                },
+            ]),
+            tests: None,
+            pre_runs: None,
+            post_runs: None,
+            init_runs: None,
+        };
+        let model_ctx = ModelContext::from_transformation(&model, &transformation);
+        let props = HashMap::from([("code".into(), "SELECT 1".into())]);
+        let sql = r#"INSERT INTO {{model.handler}} (
+{{#model.columns}}
+  "{{name}}"{{^last}}, {{/last}}
+{{/model.columns}}
+)
+VALUES {{props__code}};"#;
+        let rendered = render_compile_with_model(sql, &props, &model_ctx);
+
+        assert!(rendered.contains("\"id\", "));
+        assert!(rendered.contains("\"amount\""));
+        assert!(!rendered.contains("\"amount\", "));
     }
 
     #[test]

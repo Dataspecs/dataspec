@@ -1090,6 +1090,220 @@ mod tests {
     }
 
     #[test]
+    fn compile_hook_with_column_insert_renders_commas_between_columns() {
+        let insert_sql = r#"INSERT INTO {{model.handler}} (
+{{#model.columns}}
+  "{{name}}"{{^last}}, {{/last}}
+{{/model.columns}}
+)
+VALUES {{props__code}};"#;
+
+        let mut entities = vec![
+            (
+                PathBuf::from("model.md"),
+                Entity::Model(Model {
+                    name: "dummy_model".into(),
+                    description: None,
+                    tags: None,
+                    table_id: None,
+                    managed: false,
+                    disabled: false,
+                    meta: None,
+                    default_transformation: None,
+                }),
+            ),
+            (
+                PathBuf::from("op.md"),
+                Entity::Operation(Operation {
+                    name: "insert_op".into(),
+                    description: None,
+                    tags: None,
+                    sql_code: insert_sql.into(),
+                    template: None,
+                    dependent_tables: vec![],
+                    used_variables: None,
+                }),
+            ),
+            (
+                PathBuf::from("t.md"),
+                Entity::Transformation(Transformation {
+                    name: "dummy_model__default".into(),
+                    sql_code: "SELECT 1".into(),
+                    model: "dummy_model".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    template: None,
+                    columns: Some(vec![
+                        Column {
+                            name: "id".into(),
+                            description: None,
+                            data_type: Some("INT64".into()),
+                            labels: None,
+                            tests: None,
+                        },
+                        Column {
+                            name: "amount".into(),
+                            description: None,
+                            data_type: Some("NUMERIC".into()),
+                            labels: None,
+                            tests: None,
+                        },
+                    ]),
+                    tests: None,
+                    pre_runs: Some(vec![OperationUsage {
+                        name: "insert_op".into(),
+                        props: None,
+                        sql_code: String::new(),
+                    }]),
+                    post_runs: None,
+                    init_runs: None,
+                }),
+            ),
+        ];
+
+        let config = Config {
+            props: HashMap::from([("code".into(), "SELECT 1".into())]),
+        };
+        compile_entities(&mut entities, &config).unwrap();
+
+        let hook = entities
+            .iter()
+            .find_map(|(_, e)| match e {
+                Entity::Transformation(t) => t.pre_runs.as_ref()?.first(),
+                _ => None,
+            })
+            .expect("hook usage");
+
+        assert!(
+            hook.sql_code.contains("\"id\", "),
+            "hook sql missing comma after first column: {}",
+            hook.sql_code
+        );
+        assert!(
+            hook.sql_code.contains("\"amount\""),
+            "hook sql missing final column: {}",
+            hook.sql_code
+        );
+        assert!(
+            !hook.sql_code.contains("\"amount\", "),
+            "hook sql has trailing comma after last column: {}",
+            hook.sql_code
+        );
+    }
+
+    #[test]
+    fn compile_hook_with_template_wrapping_column_insert_renders_commas_between_columns() {
+        let insert_sql = r#"INSERT INTO {{model.handler}} (
+{{#model.columns}}
+  "{{name}}"{{^last}}, {{/last}}
+{{/model.columns}}
+)
+VALUES {{props__code}};"#;
+
+        let mut entities = vec![
+            (
+                PathBuf::from("model.md"),
+                Entity::Model(Model {
+                    name: "dummy_model".into(),
+                    description: None,
+                    tags: None,
+                    table_id: None,
+                    managed: false,
+                    disabled: false,
+                    meta: None,
+                    default_transformation: None,
+                }),
+            ),
+            (
+                PathBuf::from("tpl.md"),
+                Entity::Template(Template {
+                    name: "insert_tpl".into(),
+                    description: None,
+                    sql_code: insert_sql.into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    default_props: None,
+                    template: None,
+                }),
+            ),
+            (
+                PathBuf::from("op.md"),
+                Entity::Operation(Operation {
+                    name: "insert_op".into(),
+                    description: None,
+                    tags: None,
+                    sql_code: "SELECT 1".into(),
+                    template: Some(TemplateUsage {
+                        name: "insert_tpl".into(),
+                        props: None,
+                    }),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                }),
+            ),
+            (
+                PathBuf::from("t.md"),
+                Entity::Transformation(Transformation {
+                    name: "dummy_model__default".into(),
+                    sql_code: "SELECT 1".into(),
+                    model: "dummy_model".into(),
+                    dependent_tables: vec![],
+                    used_variables: None,
+                    template: None,
+                    columns: Some(vec![
+                        Column {
+                            name: "id".into(),
+                            description: None,
+                            data_type: Some("INT64".into()),
+                            labels: None,
+                            tests: None,
+                        },
+                        Column {
+                            name: "amount".into(),
+                            description: None,
+                            data_type: Some("NUMERIC".into()),
+                            labels: None,
+                            tests: None,
+                        },
+                    ]),
+                    tests: None,
+                    pre_runs: Some(vec![OperationUsage {
+                        name: "insert_op".into(),
+                        props: None,
+                        sql_code: String::new(),
+                    }]),
+                    post_runs: None,
+                    init_runs: None,
+                }),
+            ),
+        ];
+
+        let config = Config {
+            props: HashMap::from([("code".into(), "SELECT 1".into())]),
+        };
+        compile_entities(&mut entities, &config).unwrap();
+
+        let hook = entities
+            .iter()
+            .find_map(|(_, e)| match e {
+                Entity::Transformation(t) => t.pre_runs.as_ref()?.first(),
+                _ => None,
+            })
+            .expect("hook usage");
+
+        assert!(
+            hook.sql_code.contains("\"id\", "),
+            "hook sql missing comma after first column: {}",
+            hook.sql_code
+        );
+        assert!(
+            !hook.sql_code.contains("\"amount\", "),
+            "hook sql has trailing comma after last column: {}",
+            hook.sql_code
+        );
+    }
+
+    #[test]
     fn compile_hook_with_template_renders_model_handler() {
         let mut entities = vec![
             (

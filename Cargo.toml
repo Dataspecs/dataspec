@@ -1,6 +1,6 @@
 [package]
 name = "dataspec"
-version = "0.3.10"
+version = "0.3.11"
 edition = "2021"
 description = "Scafolding and compiler for Data Specs markdown definitions"
 license = "Apache-2.0"

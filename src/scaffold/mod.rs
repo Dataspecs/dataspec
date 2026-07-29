@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 const MAIN_TEMPLATE: &str = r#"mod data;
@@ -92,7 +92,6 @@ SELECT COUNT(*) FROM {{dummy_model}}
 
 pub fn create_project(name: &str, path: &Path) -> Result<(), String> {
     let project_dir = path.join(name);
-    let dataspec_path = default_dataspec_path();
 
     let output = Command::new("cargo")
         .current_dir(path)
@@ -108,15 +107,11 @@ pub fn create_project(name: &str, path: &Path) -> Result<(), String> {
         ));
     }
 
-    write_project_files(&project_dir, &dataspec_path, name)?;
+    write_project_files(&project_dir, name)?;
     Ok(())
 }
 
-fn write_project_files(
-    project_dir: &Path,
-    dataspec_path: &Path,
-    project_name: &str,
-) -> Result<(), String> {
+fn write_project_files(project_dir: &Path, project_name: &str) -> Result<(), String> {
     fs::write(project_dir.join("src/main.rs"), MAIN_TEMPLATE)
         .map_err(|e| format!("failed to write main.rs: {e}"))?;
     fs::write(project_dir.join("src/lib.rs"), LIB_TEMPLATE)
@@ -124,7 +119,7 @@ fn write_project_files(
     fs::write(project_dir.join("build.rs"), BUILD_TEMPLATE)
         .map_err(|e| format!("failed to write build.rs: {e}"))?;
 
-    patch_cargo_toml(project_dir, dataspec_path)?;
+    patch_cargo_toml(project_dir)?;
     patch_gitignore(project_dir)?;
     write_dummy_specs(project_dir)?;
     fs::write(project_dir.join("README.md"), readme_content(project_name))
@@ -316,26 +311,22 @@ See the [specs README](https://github.com/Dataspecs/specs/blob/main/README.md) f
     )
 }
 
-fn patch_cargo_toml(project_dir: &Path, dataspec_path: &Path) -> Result<(), String> {
+fn patch_cargo_toml(project_dir: &Path) -> Result<(), String> {
     let cargo_path = project_dir.join("Cargo.toml");
     let mut content = fs::read_to_string(&cargo_path)
         .map_err(|e| format!("failed to read Cargo.toml: {e}"))?;
 
     content = content.replace("edition = \"2024\"", "edition = \"2021\"");
 
-    let dataspec_path_str = dataspec_path
-        .canonicalize()
-        .unwrap_or_else(|_| dataspec_path.to_path_buf())
-        .display()
-        .to_string();
+    let dataspec_version = env!("CARGO_PKG_VERSION");
 
     let deps_block = format!(
         r#"[dependencies]
-dataspec = {{ path = "{dataspec_path_str}", features = ["bq", "pg"] }}
+dataspec = {{ version = "{dataspec_version}", features = ["bq", "pg"] }}
 tokio = {{ version = "1", features = ["full"] }}
 
 [build-dependencies]
-dataspec = {{ path = "{dataspec_path_str}" }}
+dataspec = {{ version = "{dataspec_version}" }}
 "#
     );
 
@@ -383,8 +374,4 @@ fn write_dummy_specs(project_dir: &Path) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-fn default_dataspec_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }

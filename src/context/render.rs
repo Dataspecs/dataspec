@@ -223,6 +223,37 @@ where
     builder.build()
 }
 
+fn push_named_items_with_last(
+    mut vec: mustache::VecBuilder,
+    items: &[String],
+) -> mustache::VecBuilder {
+    let len = items.len();
+    for (index, item) in items.iter().enumerate() {
+        let last = index + 1 == len;
+        vec = vec.push_map(|map| map.insert_str("name", item).insert_bool("last", last));
+    }
+    vec
+}
+
+fn push_meta_entries_with_last(
+    mut vec: mustache::VecBuilder,
+    meta: &HashMap<String, String>,
+) -> mustache::VecBuilder {
+    let mut keys: Vec<_> = meta.keys().collect();
+    keys.sort();
+    let len = keys.len();
+    for (index, key) in keys.iter().enumerate() {
+        let last = index + 1 == len;
+        let value = &meta[*key];
+        vec = vec.push_map(|map| {
+            map.insert_str("name", key.as_str())
+                .insert_str("value", value)
+                .insert_bool("last", last)
+        });
+    }
+    vec
+}
+
 fn build_model_map(builder: MapBuilder, model_ctx: &ModelContext) -> MapBuilder {
     let mut builder = builder
         .insert_str("name", &model_ctx.name)
@@ -234,21 +265,11 @@ fn build_model_map(builder: MapBuilder, model_ctx: &ModelContext) -> MapBuilder 
     }
 
     if let Some(tags) = &model_ctx.tags {
-        builder = builder.insert_vec("tags", |mut vec| {
-            for tag in tags {
-                vec = vec.push_str(tag);
-            }
-            vec
-        });
+        builder = builder.insert_vec("tags", |vec| push_named_items_with_last(vec, tags));
     }
 
     if let Some(meta) = &model_ctx.meta {
-        builder = builder.insert_map("meta", |mut map| {
-            for (key, value) in meta {
-                map = map.insert_str(key, value);
-            }
-            map
-        });
+        builder = builder.insert_vec("meta", |vec| push_meta_entries_with_last(vec, meta));
     }
 
     builder = builder.insert_vec("columns", |mut vec| {
@@ -262,14 +283,9 @@ fn build_model_map(builder: MapBuilder, model_ctx: &ModelContext) -> MapBuilder 
                     map = map.insert_str("data_type", data_type);
                 }
                 if let Some(labels) = &column.labels {
-                    map = map.insert_vec("labels", |mut labels_vec| {
-                        for label in labels {
-                            labels_vec = labels_vec.push_str(label);
-                        }
-                        labels_vec
-                    });
+                    map = map.insert_vec("labels", |vec| push_named_items_with_last(vec, labels));
                 }
-                map
+                map.insert_bool("last", column.last)
             });
         }
         vec
@@ -285,12 +301,7 @@ fn build_model_map(builder: MapBuilder, model_ctx: &ModelContext) -> MapBuilder 
                 map = map.insert_str("data_type", data_type);
             }
             if let Some(labels) = &tested_column.labels {
-                map = map.insert_vec("labels", |mut labels_vec| {
-                    for label in labels {
-                        labels_vec = labels_vec.push_str(label);
-                    }
-                    labels_vec
-                });
+                map = map.insert_vec("labels", |vec| push_named_items_with_last(vec, labels));
             }
             map
         })
@@ -567,6 +578,7 @@ mod tests {
             description: Some("Amount in wei".into()),
             data_type: Some("NUMERIC".into()),
             labels: None,
+            last: true,
         });
         let props = HashMap::new();
         let sql = "SELECT COUNT(*) FROM {{model.handler}} WHERE {{model.tested_column.name}} IS NULL";
@@ -582,11 +594,124 @@ mod tests {
     fn render_compile_with_model_expands_columns_section() {
         let model_ctx = sample_model_context();
         let props = HashMap::new();
-        let sql = "{{#model.columns}}`{{name}}` {{data_type}},{{/model.columns}}";
+        let sql = "{{#model.columns}}`{{name}}` {{data_type}}{{^last}},{{/last}}{{/model.columns}}";
         let rendered = render_compile_with_model(sql, &props, &model_ctx);
 
-        assert_eq!(rendered, "`id` INT64,");
+        assert_eq!(rendered, "`id` INT64");
         assert!(!rendered.contains("some_test"));
+    }
+
+    #[test]
+    fn render_compile_with_model_sets_last_on_final_column() {
+        let model = Model {
+            name: "dummy_model".into(),
+            description: None,
+            tags: None,
+            table_id: None,
+            managed: true,
+            disabled: false,
+            meta: None,
+            default_transformation: None,
+        };
+        let transformation = Transformation {
+            name: "dummy_model__default".into(),
+            sql_code: String::new(),
+            model: "dummy_model".into(),
+            dependent_tables: vec![],
+            used_variables: None,
+            template: None,
+            columns: Some(vec![
+                Column {
+                    name: "id".into(),
+                    description: None,
+                    data_type: Some("INT64".into()),
+                    labels: None,
+                    tests: None,
+                },
+                Column {
+                    name: "amount".into(),
+                    description: None,
+                    data_type: Some("NUMERIC".into()),
+                    labels: None,
+                    tests: None,
+                },
+            ]),
+            tests: None,
+            pre_runs: None,
+            post_runs: None,
+            init_runs: None,
+        };
+        let model_ctx = ModelContext::from_transformation(&model, &transformation);
+        let props = HashMap::new();
+        let sql = "{{#model.columns}}{{#last}}last={{name}}{{/last}}{{^last}}mid={{name}},{{/last}}{{/model.columns}}";
+        let rendered = render_compile_with_model(sql, &props, &model_ctx);
+
+        assert_eq!(rendered, "mid=id,last=amount");
+    }
+
+    #[test]
+    fn render_compile_with_model_sets_last_on_final_label() {
+        let model = Model {
+            name: "dummy_model".into(),
+            description: None,
+            tags: None,
+            table_id: None,
+            managed: true,
+            disabled: false,
+            meta: None,
+            default_transformation: None,
+        };
+        let transformation = Transformation {
+            name: "dummy_model__default".into(),
+            sql_code: String::new(),
+            model: "dummy_model".into(),
+            dependent_tables: vec![],
+            used_variables: None,
+            template: None,
+            columns: Some(vec![Column {
+                name: "id".into(),
+                description: None,
+                data_type: Some("INT64".into()),
+                labels: Some(vec!["pii".into(), "key".into(), "metric".into()]),
+                tests: None,
+            }]),
+            tests: None,
+            pre_runs: None,
+            post_runs: None,
+            init_runs: None,
+        };
+        let model_ctx = ModelContext::from_transformation(&model, &transformation);
+        let props = HashMap::new();
+        let sql = "{{#model.columns}}{{#labels}}{{name}}{{^last}},{{/last}}{{/labels}}{{/model.columns}}";
+        let rendered = render_compile_with_model(sql, &props, &model_ctx);
+
+        assert_eq!(rendered, "pii,key,metric");
+    }
+
+    #[test]
+    fn render_compile_with_model_sets_last_on_final_tag() {
+        let mut model_ctx = sample_model_context();
+        model_ctx.tags = Some(vec!["alpha".into(), "beta".into(), "gamma".into()]);
+        let props = HashMap::new();
+        let sql = "{{#model.tags}}{{name}}{{^last}},{{/last}}{{/model.tags}}";
+        let rendered = render_compile_with_model(sql, &props, &model_ctx);
+
+        assert_eq!(rendered, "alpha,beta,gamma");
+    }
+
+    #[test]
+    fn render_compile_with_model_sets_last_on_final_meta_entry() {
+        let mut model_ctx = sample_model_context();
+        model_ctx.meta = Some(HashMap::from([
+            ("owner".into(), "team".into()),
+            ("tier".into(), "gold".into()),
+            ("zone".into(), "eu".into()),
+        ]));
+        let props = HashMap::new();
+        let sql = "{{#model.meta}}{{name}}={{value}}{{^last}};{{/last}}{{/model.meta}}";
+        let rendered = render_compile_with_model(sql, &props, &model_ctx);
+
+        assert_eq!(rendered, "owner=team;tier=gold;zone=eu");
     }
 
     #[test]

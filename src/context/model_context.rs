@@ -24,15 +24,18 @@ pub struct ColumnTemplateMeta {
     pub description: Option<String>,
     pub data_type: Option<String>,
     pub labels: Option<Vec<String>>,
+    /// `true` for the last column in `model.columns`; `false` otherwise.
+    pub last: bool,
 }
 
 impl ColumnTemplateMeta {
-    pub fn from_column(column: &Column) -> Self {
+    pub fn from_column(column: &Column, last: bool) -> Self {
         Self {
             name: column.name.clone(),
             description: column.description.clone(),
             data_type: column.data_type.clone(),
             labels: column.labels.clone(),
+            last,
         }
     }
 }
@@ -42,7 +45,15 @@ impl ModelContext {
         let columns = transformation
             .columns
             .as_ref()
-            .map(|cols| cols.iter().map(ColumnTemplateMeta::from_column).collect())
+            .map(|cols| {
+                let len = cols.len();
+                cols.iter()
+                    .enumerate()
+                    .map(|(index, column)| {
+                        ColumnTemplateMeta::from_column(column, index + 1 == len)
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
         Self {
@@ -59,7 +70,7 @@ impl ModelContext {
     }
 
     pub fn with_tested_column(mut self, column: &Column) -> Self {
-        self.tested_column = Some(ColumnTemplateMeta::from_column(column));
+        self.tested_column = Some(ColumnTemplateMeta::from_column(column, true));
         self
     }
 }

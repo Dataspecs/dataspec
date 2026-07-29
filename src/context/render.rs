@@ -273,7 +273,9 @@ fn build_model_map(builder: MapBuilder, model_ctx: &ModelContext) -> MapBuilder 
     }
 
     builder = builder.insert_vec("columns", |mut vec| {
-        for column in &model_ctx.columns {
+        let len = model_ctx.columns.len();
+        for (index, column) in model_ctx.columns.iter().enumerate() {
+            let last = index + 1 == len;
             vec = vec.push_map(|mut map| {
                 map = map.insert_str("name", &column.name);
                 if let Some(description) = &column.description {
@@ -285,7 +287,7 @@ fn build_model_map(builder: MapBuilder, model_ctx: &ModelContext) -> MapBuilder 
                 if let Some(labels) = &column.labels {
                     map = map.insert_vec("labels", |vec| push_named_items_with_last(vec, labels));
                 }
-                map.insert_bool("last", column.last)
+                map.insert_bool("last", last)
             });
         }
         vec
@@ -578,7 +580,6 @@ mod tests {
             description: Some("Amount in wei".into()),
             data_type: Some("NUMERIC".into()),
             labels: None,
-            last: true,
         });
         let props = HashMap::new();
         let sql = "SELECT COUNT(*) FROM {{model.handler}} WHERE {{model.tested_column.name}} IS NULL";

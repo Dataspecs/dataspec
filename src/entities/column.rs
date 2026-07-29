@@ -23,7 +23,7 @@ impl Column {
     }
 
     /// Column metadata for mustache templates (excludes test references).
-    pub fn to_template_meta(&self, last: bool) -> crate::context::ColumnTemplateMeta {
-        crate::context::ColumnTemplateMeta::from_column(self, last)
+    pub fn to_template_meta(&self) -> crate::context::ColumnTemplateMeta {
+        crate::context::ColumnTemplateMeta::from_column(self)
     }
 }

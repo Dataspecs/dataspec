@@ -8,7 +8,7 @@ at runtime.
 [Status: early](#)
 
 This repo is the **compiler and runtime**. For the spec format itself, examples, and the "why Markdown instead of YAML+Jinja" case, see
-`[Dataspecs/specs](https://github.com/Dataspecs/specs)`.
+[Dataspecs/specs](https://github.com/Dataspecs/specs).
 
 ---
 
